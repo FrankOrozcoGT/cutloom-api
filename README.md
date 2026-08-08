@@ -1,6 +1,6 @@
 # CutLoom API
 
-Backend de [CutLoom](https://github.com/) — un editor de video web open source. La mayor parte del procesamiento de video ocurre en el cliente (`cutloom-web`, vía WebCodecs + Whisper en el navegador); este servicio cubre lo que no puede vivir ahí.
+Backend de CutLoom — un editor de video web open source. La mayor parte del procesamiento de video ocurre en el cliente ([cutloom-web](https://github.com/FrankOrozcoGT/cutloom-web), vía WebCodecs + Whisper en el navegador); este servicio cubre lo que no puede vivir ahí.
 
 ## Responsabilidades
 
@@ -10,7 +10,7 @@ Backend de [CutLoom](https://github.com/) — un editor de video web open source
 
 ## Pipeline de detección de shorts (premium)
 
-1. **Whisper** (client-side, en `cutloom-web`) transcribe el video completo — gratis, sin tocar este backend.
+1. **Whisper** (client-side, en [cutloom-web](https://github.com/FrankOrozcoGT/cutloom-web)) transcribe el video completo — gratis, sin tocar este backend.
 2. La transcripción se envía a un **LLM (Kimi)** que identifica los tramos de texto con mayor potencial (ganchos, remates, cambios de ritmo) — filtra de 30 min a unos pocos minutos de candidatos.
 3. Solo sobre esos tramos acotados corre **SenseVoice** (vía sherpa-onnx, en este servidor) para detectar emoción en el audio y afinar la selección final.
 
