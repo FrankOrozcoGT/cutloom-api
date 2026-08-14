@@ -1,0 +1,16 @@
+if ! command -v bun >/dev/null 2>&1; then
+	echo "✖ pre-commit: 'bun' not found in PATH."
+	echo ""
+	echo "  If bun is installed but this still fails, your shell's PATH isn't"
+	echo "  reaching git hooks (common when 'export PATH=...bun...' only runs"
+	echo "  in interactive shells). Fix it by creating ~/.config/husky/init.sh"
+	echo "  with:"
+	echo ""
+	echo "    export BUN_INSTALL=\"\$HOME/.bun\""
+	echo "    export PATH=\"\$BUN_INSTALL/bin:\$PATH\""
+	echo ""
+	echo "  If bun isn't installed at all: https://bun.sh/docs/installation"
+	exit 1
+fi
+
+bunx lint-staged
