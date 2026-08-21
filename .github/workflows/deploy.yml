@@ -37,14 +37,38 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy over SSH
+      - name: Write .env.production and deploy over SSH
         # The deploy-cutloom key on the server has a forced command in
         # authorized_keys (command="/srv/cutloom-api/remote-deploy.sh") —
-        # whatever we send here is ignored server-side; that script always
-        # runs instead. Sending its own name documents that intent.
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: deploy-cutloom
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script: remote-deploy.sh
+        # whatever we "run" here is ignored server-side; that script always
+        # runs instead. What we CAN control is stdin, which remote-deploy.sh
+        # reads as the new .env.production content when piped in. This keeps
+        # secrets out of any file committed to the repo or written by hand on
+        # the server — GitHub Secrets is the single source of truth, and
+        # rotating one is just updating the secret + re-running this workflow.
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          cat <<EOF > /tmp/env.production
+          PORT=3000
+          NODE_ENV=production
+          DATABASE_URL=${DATABASE_URL}
+          CORS_ORIGINS=https://app-cutloom.fcoder.uk
+          JWT_SECRET=${JWT_SECRET}
+          JWT_ACCESS_EXPIRES_IN=15m
+          JWT_REFRESH_EXPIRES_IN=30d
+          FRONTEND_URL=https://app-cutloom.fcoder.uk
+          GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+          GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+          GOOGLE_REDIRECT_URI=https://api-cutloom.fcoder.uk/api/auth/google/callback
+          EOF
+
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            deploy-cutloom@${{ secrets.DEPLOY_HOST }} < /tmp/env.production
+          rm -f /tmp/env.production ~/.ssh/deploy_key
