@@ -1,0 +1,14 @@
+services:
+  api:
+    image: ghcr.io/frankorozcogt/cutloom-api:latest
+    container_name: cutloom_api
+    restart: unless-stopped
+    env_file: .env.production
+    ports:
+      - "3005:3000"
+    networks:
+      - f_chat_fchat_network
+
+networks:
+  f_chat_fchat_network:
+    external: true
