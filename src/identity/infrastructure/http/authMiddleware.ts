@@ -7,6 +7,7 @@ import type { User } from '../../domain/entities/User'
 declare module 'fastify' {
   interface FastifyRequest {
     user?: User
+    organizationId?: string
   }
 }
 
@@ -47,5 +48,6 @@ export function createAuthMiddleware(
     }
 
     req.user = user
+    req.organizationId = payload.organizationId
   }
 }

@@ -12,6 +12,7 @@ import { InvalidEmailError } from '../../domain/value-objects/Email'
 import { WeakPasswordError } from '../../domain/value-objects/Password'
 import { InvalidTokenError } from '../../domain/ports/TokenService'
 import type { User } from '../../domain/entities/User'
+import type { EntitlementsReader } from '../../domain/ports/EntitlementsReader'
 
 const REFRESH_TOKEN_COOKIE = 'refreshToken'
 const REFRESH_TOKEN_COOKIE_PATH = '/api/auth/refresh'
@@ -48,6 +49,7 @@ export class AuthController {
     private readonly refreshTokenUseCase: RefreshTokenUseCase,
     private readonly googleProvider: GoogleIdentityProvider,
     private readonly frontendUrl: string,
+    private readonly entitlementsReader: EntitlementsReader,
   ) {}
 
   async register(req: FastifyRequest, reply: FastifyReply) {
@@ -143,7 +145,16 @@ export class AuthController {
     if (!req.user) {
       return reply.status(401).send({ error: 'MISSING_ACCESS_TOKEN' })
     }
-    return reply.status(200).send({ user: serializeUser(req.user) })
+
+    const entitlements = req.organizationId
+      ? await this.entitlementsReader.findByOrganizationId(req.organizationId)
+      : []
+
+    return reply.status(200).send({
+      user: serializeUser(req.user),
+      organizationId: req.organizationId ?? null,
+      entitlements,
+    })
   }
 
   async refresh(req: FastifyRequest, reply: FastifyReply) {

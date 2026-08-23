@@ -15,6 +15,7 @@ import { RefreshTokenUseCase } from '../../application/use-cases/RefreshTokenUse
 import { AuthController } from '../http/AuthController'
 import { createAuthMiddleware } from '../http/authMiddleware'
 import type { IdentityProvider } from '../../domain/ports/IdentityProvider'
+import type { EntitlementsReader } from '../../domain/ports/EntitlementsReader'
 
 function readEnv(name: string, fallback?: string): string {
   const value = process.env[name] ?? fallback
@@ -29,7 +30,7 @@ export interface AuthModule {
   authMiddleware: ReturnType<typeof createAuthMiddleware>
 }
 
-export function buildAuthModule(db: Database): AuthModule {
+export function buildAuthModule(db: Database, entitlementsReader: EntitlementsReader): AuthModule {
   const userRepository = new DrizzleUserRepository(db)
   const organizationRepository = new DrizzleOrganizationRepository(db)
   const membershipRepository = new DrizzleMembershipRepository(db)
@@ -73,6 +74,7 @@ export function buildAuthModule(db: Database): AuthModule {
     refreshTokenUseCase,
     googleProvider,
     readEnv('FRONTEND_URL', 'http://localhost:5173'),
+    entitlementsReader,
   )
   const authMiddleware = createAuthMiddleware(tokenService, tokenBlacklistRepository, userRepository)
 
