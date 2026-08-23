@@ -2,3 +2,4 @@
 // Cada contexto exporta sus tablas y se re-exportan aquí para que
 // drizzle-kit las descubra en un único archivo raíz.
 export * from '../../../identity/infrastructure/db/schema'
+export * from '../../../billing/infrastructure/db/schema'
