@@ -4,6 +4,10 @@ import cors from '@fastify/cors'
 import { db } from '../db/client'
 import { buildAuthModule } from '../../../identity/infrastructure/composition/authComposition'
 import { registerAuthRoutes } from '../../../identity/infrastructure/http/authRoutes'
+import { buildBillingModule } from '../../../billing/infrastructure/composition/billingComposition'
+import { registerBillingRoutes } from '../../../billing/infrastructure/http/billingRoutes'
+import { registerWebhookRoutes } from '../../../billing/infrastructure/http/webhookRoutes'
+import { registerDonationRoutes } from '../../../billing/infrastructure/http/donationRoutes'
 
 function corsOrigins(): string[] {
   const raw = process.env.CORS_ORIGINS
@@ -22,8 +26,17 @@ export function buildServer() {
   })
   app.register(cookie)
 
-  const { controller: authController, authMiddleware } = buildAuthModule(db)
+  const billingModule = buildBillingModule(db)
+
+  const { controller: authController, authMiddleware } = buildAuthModule(db, {
+    findByOrganizationId: (organizationId) =>
+      billingModule.entitlementRepository.findByOrganizationId(organizationId),
+  })
   registerAuthRoutes(app, authController, authMiddleware)
+
+  registerBillingRoutes(app, billingModule.controller, authMiddleware)
+  registerWebhookRoutes(app, billingModule.webhookModule)
+  registerDonationRoutes(app, billingModule.createDonationUseCase, billingModule.donationRoutesConfig)
 
   app.get('/health', () => ({ status: 'ok' }))
 
