@@ -8,6 +8,8 @@ import { buildBillingModule } from '../../../billing/infrastructure/composition/
 import { registerBillingRoutes } from '../../../billing/infrastructure/http/billingRoutes'
 import { registerWebhookRoutes } from '../../../billing/infrastructure/http/webhookRoutes'
 import { registerDonationRoutes } from '../../../billing/infrastructure/http/donationRoutes'
+import { buildShortsModule } from '../../../shorts-intelligence/infrastructure/composition/shortsComposition'
+import { registerShortsRoutes } from '../../../shorts-intelligence/infrastructure/http/shortsRoutes'
 
 function corsOrigins(): string[] {
   const raw = process.env.CORS_ORIGINS
@@ -37,6 +39,9 @@ export function buildServer() {
   registerBillingRoutes(app, billingModule.controller, authMiddleware)
   registerWebhookRoutes(app, billingModule.webhookModule)
   registerDonationRoutes(app, billingModule.createDonationUseCase, billingModule.donationRoutesConfig)
+
+  const shortsModule = buildShortsModule(db, billingModule.authorizeFeatureUsageUseCase)
+  registerShortsRoutes(app, shortsModule.controller, authMiddleware)
 
   app.get('/health', () => ({ status: 'ok' }))
 
