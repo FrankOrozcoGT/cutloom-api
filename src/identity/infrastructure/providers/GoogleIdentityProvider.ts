@@ -79,17 +79,22 @@ export class GoogleIdentityProvider implements IdentityProvider {
   }
 
   private async exchangeCodeForTokens(code: string): Promise<GoogleTokenResponse> {
-    const response = await fetch(TOKEN_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code,
-        client_id: this.options.clientId,
-        client_secret: this.options.clientSecret,
-        redirect_uri: this.options.redirectUri,
-        grant_type: 'authorization_code',
-      }),
-    })
+    let response: Response
+    try {
+      response = await fetch(TOKEN_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id: this.options.clientId,
+          client_secret: this.options.clientSecret,
+          redirect_uri: this.options.redirectUri,
+          grant_type: 'authorization_code',
+        }),
+      })
+    } catch {
+      throw new GoogleAuthError('Network error while exchanging authorization code with Google')
+    }
 
     if (!response.ok) {
       throw new GoogleAuthError('Failed to exchange authorization code with Google')
@@ -99,9 +104,14 @@ export class GoogleIdentityProvider implements IdentityProvider {
   }
 
   private async fetchUserInfo(accessToken: string): Promise<GoogleUserInfo> {
-    const response = await fetch(USERINFO_ENDPOINT, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
+    let response: Response
+    try {
+      response = await fetch(USERINFO_ENDPOINT, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+    } catch {
+      throw new GoogleAuthError('Network error while fetching Google user info')
+    }
 
     if (!response.ok) {
       throw new GoogleAuthError('Failed to fetch Google user info')

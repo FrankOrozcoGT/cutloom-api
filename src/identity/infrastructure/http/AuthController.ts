@@ -18,6 +18,7 @@ const REFRESH_TOKEN_COOKIE = 'refreshToken'
 const REFRESH_TOKEN_COOKIE_PATH = '/api/auth/refresh'
 const OAUTH_STATE_COOKIE = 'oauth_state'
 const OAUTH_STATE_COOKIE_PATH = '/api/auth/google'
+const OAUTH_RETURN_TO_COOKIE = 'oauth_return_to'
 
 function cookieOptions() {
   return {
@@ -40,6 +41,11 @@ function stateCookieOptions() {
 
 function serializeUser(user: User) {
   return user.toJSON()
+}
+
+/** Solo se acepta un path relativo propio del frontend — nunca una URL absoluta (evita open redirect). */
+function isSafeReturnTo(returnTo: string): boolean {
+  return returnTo.startsWith('/') && !returnTo.startsWith('//')
 }
 
 export class AuthController {
@@ -85,9 +91,16 @@ export class AuthController {
     }
   }
 
-  async googleStart(_req: FastifyRequest, reply: FastifyReply) {
+  async googleStart(req: FastifyRequest, reply: FastifyReply) {
+    const { returnTo } = req.query as { returnTo?: string }
+
     const state = crypto.randomUUID()
     reply.setCookie(OAUTH_STATE_COOKIE, state, stateCookieOptions())
+
+    if (returnTo && isSafeReturnTo(returnTo)) {
+      reply.setCookie(OAUTH_RETURN_TO_COOKIE, returnTo, stateCookieOptions())
+    }
+
     return reply.redirect(this.googleProvider.buildAuthorizationUrl(state))
   }
 
@@ -100,8 +113,11 @@ export class AuthController {
     const expectedState = req.cookies[OAUTH_STATE_COOKIE]
     reply.clearCookie(OAUTH_STATE_COOKIE, stateCookieOptions())
 
+    const returnTo = req.cookies[OAUTH_RETURN_TO_COOKIE]
+    reply.clearCookie(OAUTH_RETURN_TO_COOKIE, stateCookieOptions())
+
     if (googleError || !code || !state || state !== expectedState) {
-      return this.redirectWithError(reply, 'GOOGLE_AUTH_FAILED')
+      return this.redirectWithError(reply, 'GOOGLE_AUTH_FAILED', returnTo)
     }
 
     try {
@@ -111,23 +127,39 @@ export class AuthController {
       })
 
       reply.setCookie(REFRESH_TOKEN_COOKIE, result.tokens.refreshToken, cookieOptions())
-      return reply.redirect(`${this.frontendUrl}/auth/callback?isNewUser=${String(result.isNewUser)}`)
+      return reply.redirect(this.buildCallbackUrl({ isNewUser: String(result.isNewUser) }, returnTo))
     } catch (error) {
       if (error instanceof EmailExistsWithGoogleError) {
-        return this.redirectWithError(reply, 'EMAIL_EXISTS_GOOGLE')
+        return this.redirectWithError(reply, 'EMAIL_EXISTS_GOOGLE', returnTo)
       }
       if (error instanceof EmailExistsLocalError) {
-        return this.redirectWithError(reply, 'EMAIL_EXISTS_LOCAL')
+        return this.redirectWithError(reply, 'EMAIL_EXISTS_LOCAL', returnTo)
       }
       if (error instanceof GoogleAuthError) {
-        return this.redirectWithError(reply, 'GOOGLE_AUTH_FAILED')
+        return this.redirectWithError(reply, 'GOOGLE_AUTH_FAILED', returnTo)
       }
-      throw error
+      // Cualquier otro fallo imprevisto: esto es una navegación real del navegador
+      // (redirect de Google), no una llamada fetch del frontend — nunca debe mostrarle
+      // JSON crudo al usuario. Se loguea el error real y se redirige con un código
+      // genérico para que el frontend lo muestre.
+      req.log.error(error, 'Unexpected error in Google OAuth callback')
+      return this.redirectWithError(reply, 'UNEXPECTED_ERROR', returnTo)
     }
   }
 
-  private redirectWithError(reply: FastifyReply, error: string) {
-    return reply.redirect(`${this.frontendUrl}/auth/callback?error=${error}`)
+  private buildCallbackUrl(params: Record<string, string>, returnTo: string | undefined): string {
+    const url = new URL(`${this.frontendUrl}/auth/callback`)
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, value)
+    }
+    if (returnTo && isSafeReturnTo(returnTo)) {
+      url.searchParams.set('returnTo', returnTo)
+    }
+    return url.toString()
+  }
+
+  private redirectWithError(reply: FastifyReply, error: string, returnTo?: string) {
+    return reply.redirect(this.buildCallbackUrl({ error }, returnTo))
   }
 
   async logout(req: FastifyRequest, reply: FastifyReply) {
