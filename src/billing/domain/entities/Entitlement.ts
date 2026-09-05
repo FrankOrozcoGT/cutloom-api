@@ -3,8 +3,6 @@ export interface EntitlementProps {
   organizationId: string
   feature: string
   active: boolean
-  /** null = sin tope de usos por ciclo (acceso binario); number = usos restantes permitidos. */
-  usageLimit: number | null
   usageCount: number
 }
 
@@ -31,17 +29,21 @@ export class Entitlement {
     return this.props.active
   }
 
-  get usageLimit(): number | null {
-    return this.props.usageLimit
-  }
-
   get usageCount(): number {
     return this.props.usageCount
   }
 
-  /** Sin límite configurado (usageLimit null) siempre autoriza mientras esté active. */
-  hasRemainingUsage(): boolean {
-    if (this.props.usageLimit === null) return true
-    return this.props.usageCount < this.props.usageLimit
+  /**
+   * currentUsageLimit se resuelve en vivo desde plan_features (no vive en el
+   * entitlement) — así un cambio de tope aplica de inmediato a organizaciones ya
+   * suscritas. null = sin límite configurado, siempre autoriza mientras esté active.
+   */
+  hasRemainingUsage(currentUsageLimit: number | null): boolean {
+    if (currentUsageLimit === null) return true
+    return this.props.usageCount < currentUsageLimit
+  }
+
+  toJSON(): EntitlementProps {
+    return { ...this.props }
   }
 }

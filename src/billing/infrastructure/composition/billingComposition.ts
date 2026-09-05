@@ -100,7 +100,12 @@ export function buildBillingModule(db: Database): BillingModule {
   const recordDonationUseCase = new RecordDonationUseCase(donationRepository)
   const getSubscriptionStatusUseCase = new GetSubscriptionStatusUseCase(subscriptionRepository)
   const getCreditBalanceUseCase = new GetCreditBalanceUseCase(creditAccountRepository)
-  const authorizeFeatureUsageUseCase = new AuthorizeFeatureUsageUseCase(entitlementRepository, creditAccountRepository)
+  const authorizeFeatureUsageUseCase = new AuthorizeFeatureUsageUseCase(
+    entitlementRepository,
+    creditAccountRepository,
+    subscriptionRepository,
+    planRepository,
+  )
   const listPlansUseCase = new ListPlansUseCase(planRepository)
 
   const controller = new BillingController(

@@ -39,11 +39,7 @@ export class RenewalUseCase {
 
     const planFeatures = await this.planRepository.findFeaturesByPlanId(subscription.planId)
     for (const planFeature of planFeatures) {
-      await this.entitlementRepository.grantWithUsageLimit(
-        subscription.organizationId,
-        planFeature.feature,
-        planFeature.usageLimit,
-      )
+      await this.entitlementRepository.grant(subscription.organizationId, planFeature.feature)
     }
   }
 }

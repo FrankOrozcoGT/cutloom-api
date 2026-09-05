@@ -66,9 +66,11 @@ export const entitlements = pgTable(
       .references(() => organizations.id, { onDelete: 'cascade' }),
     feature: text('feature').notNull(),
     active: boolean('active').notNull().default(false),
-    // Reflejan el plan_features vigente al momento de otorgar el entitlement — se
-    // vuelven a fijar en cada activación/renovación/cambio de plan (ver Activate/Renewal/ChangePlanUseCase).
-    usageLimit: integer('usage_limit'),
+    // El tope de uso (usageLimit) NO se copia aquí — se resuelve en vivo desde
+    // plan_features.usage_limit en cada AuthorizeFeatureUsageUseCase.requireEntitlement,
+    // así un cambio de tope aplica de inmediato a organizaciones ya suscritas sin esperar
+    // renovación. usageCount sí vive aquí porque es consumo real por ciclo de facturación
+    // (se resetea en activación/renovación/cambio de plan, ver Activate/Renewal/ChangePlanUseCase).
     usageCount: integer('usage_count').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

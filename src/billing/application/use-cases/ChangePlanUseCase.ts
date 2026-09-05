@@ -107,13 +107,11 @@ export class ChangePlanUseCase {
       }
     }
 
-    // Features del plan nuevo se otorgan (o re-otorgan) con su tope de uso reseteado.
+    // Features del plan nuevo se otorgan (o re-otorgan) con su contador de uso reseteado.
+    // El tope (usageLimit) ya no se copia aquí — se resuelve en vivo desde plan_features
+    // en cada AuthorizeFeatureUsageUseCase.requireEntitlement.
     for (const newFeature of newPlanFeatures) {
-      await this.entitlementRepository.grantWithUsageLimit(
-        subscription.organizationId,
-        newFeature.feature,
-        newFeature.usageLimit,
-      )
+      await this.entitlementRepository.grant(subscription.organizationId, newFeature.feature)
     }
 
     return {

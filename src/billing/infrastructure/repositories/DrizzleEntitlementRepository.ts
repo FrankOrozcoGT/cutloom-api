@@ -11,7 +11,6 @@ function toEntity(row: typeof entitlements.$inferSelect): Entitlement {
     organizationId: row.organizationId,
     feature: row.feature,
     active: row.active,
-    usageLimit: row.usageLimit,
     usageCount: row.usageCount,
   })
 }
@@ -43,17 +42,17 @@ export class DrizzleEntitlementRepository implements EntitlementRepository {
       })
   }
 
-  async grantWithUsageLimit(organizationId: string, feature: string, usageLimit: number | null): Promise<void> {
+  async grant(organizationId: string, feature: string): Promise<void> {
     await this.db
       .insert(entitlements)
-      .values({ organizationId, feature, active: true, usageLimit, usageCount: 0 })
+      .values({ organizationId, feature, active: true, usageCount: 0 })
       .onConflictDoUpdate({
         target: [entitlements.organizationId, entitlements.feature],
-        set: { active: true, usageLimit, usageCount: 0, updatedAt: new Date() },
+        set: { active: true, usageCount: 0, updatedAt: new Date() },
       })
   }
 
-  async incrementUsage(organizationId: string, feature: string): Promise<void> {
+  async incrementUsage(organizationId: string, feature: string, currentUsageLimit: number | null): Promise<void> {
     await this.db.transaction(async (tx) => {
       const [row] = await tx
         .select()
@@ -61,11 +60,11 @@ export class DrizzleEntitlementRepository implements EntitlementRepository {
         .where(and(eq(entitlements.organizationId, organizationId), eq(entitlements.feature, feature)))
         .limit(1)
 
-      if (!row || row.usageLimit === null) {
+      if (!row || currentUsageLimit === null) {
         return
       }
 
-      if (row.usageCount >= row.usageLimit) {
+      if (row.usageCount >= currentUsageLimit) {
         throw new UsageLimitExceededError(organizationId, feature)
       }
 
