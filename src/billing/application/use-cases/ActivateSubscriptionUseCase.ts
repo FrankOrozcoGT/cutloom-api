@@ -48,11 +48,7 @@ export class ActivateSubscriptionUseCase {
 
     const planFeatures = await this.planRepository.findFeaturesByPlanId(plan.id)
     for (const planFeature of planFeatures) {
-      await this.entitlementRepository.grantWithUsageLimit(
-        subscription.organizationId,
-        planFeature.feature,
-        planFeature.usageLimit,
-      )
+      await this.entitlementRepository.grant(subscription.organizationId, planFeature.feature)
     }
   }
 }
