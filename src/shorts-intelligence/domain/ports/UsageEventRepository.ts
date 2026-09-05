@@ -1,3 +1,8 @@
+export type UsageEventMetadata =
+  | { feature: 'improve_subtitles'; nCorrections: number }
+  | { feature: 'detect_shorts'; nCandidates: number }
+  | { feature: 'score_shorts'; nShorts: number; warnings: string[] }
+
 export interface UsageEvent {
   organizationId: string
   feature: string
@@ -6,7 +11,7 @@ export interface UsageEvent {
   promptTokens: number
   completionTokens: number
   cost: number | null
-  metadata: Record<string, unknown>
+  metadata: UsageEventMetadata
 }
 
 /** Filtrado siempre por organizationId (tenant) — ver DrizzleUsageEventRepository. */

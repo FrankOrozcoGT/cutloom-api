@@ -1,4 +1,4 @@
-import type { UsageEventRepository } from '../../domain/ports/UsageEventRepository'
+import type { UsageEventMetadata, UsageEventRepository } from '../../domain/ports/UsageEventRepository'
 
 export interface RecordUsageInput {
   organizationId: string
@@ -8,7 +8,7 @@ export interface RecordUsageInput {
   promptTokens: number
   completionTokens: number
   cost: number | null
-  metadata?: Record<string, unknown>
+  metadata: UsageEventMetadata
 }
 
 /**
@@ -28,7 +28,7 @@ export class UsageEventService {
         promptTokens: input.promptTokens,
         completionTokens: input.completionTokens,
         cost: input.cost,
-        metadata: input.metadata ?? {},
+        metadata: input.metadata,
       })
     } catch (error) {
       console.error('Failed to record usage event', { feature: input.feature, error })

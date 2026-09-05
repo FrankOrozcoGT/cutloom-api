@@ -1,8 +1,6 @@
 import { InsufficientCreditsError } from '../../domain/ports/CreditAccountRepository'
 import type { CreditAccountRepository } from '../../domain/ports/CreditAccountRepository'
 import type { EntitlementRepository } from '../../domain/ports/EntitlementRepository'
-import type { PlanRepository } from '../../domain/ports/PlanRepository'
-import type { SubscriptionRepository } from '../../domain/ports/SubscriptionRepository'
 
 export class FeatureAccessDeniedError extends Error {
   constructor(feature: string) {
@@ -41,8 +39,6 @@ export class AuthorizeFeatureUsageUseCase {
   constructor(
     private readonly entitlementRepository: EntitlementRepository,
     private readonly creditAccountRepository: CreditAccountRepository,
-    private readonly subscriptionRepository: SubscriptionRepository,
-    private readonly planRepository: PlanRepository,
   ) {}
 
   /**
@@ -53,30 +49,18 @@ export class AuthorizeFeatureUsageUseCase {
    * bloquea aunque el entitlement siga activo.
    */
   async requireEntitlement(input: AuthorizeByEntitlementInput): Promise<void> {
-    const entitlement = await this.entitlementRepository.findByOrganizationAndFeature(
+    const { entitlement, currentUsageLimit } = await this.entitlementRepository.findAuthorizationContext(
       input.organizationId,
       input.feature,
     )
     if (!entitlement?.active) {
       throw new FeatureAccessDeniedError(input.feature)
     }
-
-    const currentUsageLimit = await this.resolveCurrentUsageLimit(input.organizationId, input.feature)
     if (!entitlement.hasRemainingUsage(currentUsageLimit)) {
       throw new FeatureAccessDeniedError(input.feature)
     }
 
     await this.entitlementRepository.incrementUsage(input.organizationId, input.feature, currentUsageLimit)
-  }
-
-  private async resolveCurrentUsageLimit(organizationId: string, feature: string): Promise<number | null> {
-    const subscription = await this.subscriptionRepository.findByOrganizationId(organizationId)
-    if (!subscription) {
-      return null
-    }
-    const planFeatures = await this.planRepository.findFeaturesByPlanId(subscription.planId)
-    const planFeature = planFeatures.find((f) => f.feature === feature)
-    return planFeature?.usageLimit ?? null
   }
 
   /** La feature exige créditos suficientes; los descuenta si autoriza. No acepta entitlement como alternativa. */
@@ -98,13 +82,10 @@ export class AuthorizeFeatureUsageUseCase {
    * bloquea si ninguno de los dos cubre el acceso.
    */
   async requireEntitlementOrCredits(input: AuthorizeEitherInput): Promise<void> {
-    const entitlement = await this.entitlementRepository.findByOrganizationAndFeature(
+    const { entitlement, currentUsageLimit } = await this.entitlementRepository.findAuthorizationContext(
       input.organizationId,
       input.feature,
     )
-    const currentUsageLimit = entitlement?.active
-      ? await this.resolveCurrentUsageLimit(input.organizationId, input.feature)
-      : null
     if (entitlement?.active && entitlement.hasRemainingUsage(currentUsageLimit)) {
       await this.entitlementRepository.incrementUsage(input.organizationId, input.feature, currentUsageLimit)
       return

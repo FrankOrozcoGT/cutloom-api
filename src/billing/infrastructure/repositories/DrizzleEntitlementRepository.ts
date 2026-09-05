@@ -1,9 +1,9 @@
 import { and, eq, sql } from 'drizzle-orm'
 import type { Database } from '../../../shared/infrastructure/db/client'
-import { entitlements } from '../db/schema'
+import { entitlements, planFeatures, subscriptions } from '../db/schema'
 import { Entitlement } from '../../domain/entities/Entitlement'
 import { UsageLimitExceededError } from '../../domain/ports/EntitlementRepository'
-import type { EntitlementRepository } from '../../domain/ports/EntitlementRepository'
+import type { AuthorizationContext, EntitlementRepository } from '../../domain/ports/EntitlementRepository'
 
 function toEntity(row: typeof entitlements.$inferSelect): Entitlement {
   return Entitlement.create({
@@ -30,6 +30,27 @@ export class DrizzleEntitlementRepository implements EntitlementRepository {
   async findByOrganizationId(organizationId: string): Promise<Entitlement[]> {
     const rows = await this.db.select().from(entitlements).where(eq(entitlements.organizationId, organizationId))
     return rows.map(toEntity)
+  }
+
+  async findAuthorizationContext(organizationId: string, feature: string): Promise<AuthorizationContext> {
+    const [row] = await this.db
+      .select({
+        entitlement: entitlements,
+        usageLimit: planFeatures.usageLimit,
+      })
+      .from(entitlements)
+      .leftJoin(subscriptions, eq(subscriptions.organizationId, entitlements.organizationId))
+      .leftJoin(
+        planFeatures,
+        and(eq(planFeatures.planId, subscriptions.planId), eq(planFeatures.feature, entitlements.feature)),
+      )
+      .where(and(eq(entitlements.organizationId, organizationId), eq(entitlements.feature, feature)))
+      .limit(1)
+
+    return {
+      entitlement: row ? toEntity(row.entitlement) : null,
+      currentUsageLimit: row?.usageLimit ?? null,
+    }
   }
 
   async setActive(organizationId: string, feature: string, active: boolean): Promise<void> {

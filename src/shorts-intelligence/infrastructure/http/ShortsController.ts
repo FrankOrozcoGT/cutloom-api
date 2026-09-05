@@ -1,12 +1,8 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { FeatureAccessDeniedError } from '../../../billing/application/use-cases/AuthorizeFeatureUsageUseCase'
+import { EmptySegmentsError } from '../../domain/constants'
+import { SubtitlesLlmFailedError, type ImproveSubtitlesUseCase } from '../../application/use-cases/ImproveSubtitlesUseCase'
 import {
-  EmptySegmentsError,
-  SubtitlesLlmFailedError,
-  type ImproveSubtitlesUseCase,
-} from '../../application/use-cases/ImproveSubtitlesUseCase'
-import {
-  EmptySegmentsError as DetectShortsEmptySegmentsError,
   ShortsLlmFailedError,
   type DetectedShortCandidate,
   type DetectShortsUseCase,
@@ -90,7 +86,7 @@ export class ShortsController {
       })
       return reply.status(200).send(result)
     } catch (error) {
-      if (error instanceof DetectShortsEmptySegmentsError) {
+      if (error instanceof EmptySegmentsError) {
         return reply.status(400).send({ error: 'EMPTY_SEGMENTS' })
       }
       if (error instanceof FeatureAccessDeniedError) {

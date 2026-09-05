@@ -2,16 +2,7 @@ import type { AuthorizeFeatureUsageUseCase } from '../../../billing/application/
 import type { ShortsIntelligencePort, SubtitleSegmentInput } from '../../domain/ports/ShortsIntelligencePort'
 import { ShortPromptBuilder, type ShortIdealJson } from '../services/ShortPromptBuilder'
 import type { UsageEventService } from '../services/UsageEventService'
-import { SHORTS_AI_FEATURE } from './ImproveSubtitlesUseCase'
-
-const DEEPSEEK_MODEL = 'deepseek-v4-flash'
-
-export class EmptySegmentsError extends Error {
-  constructor() {
-    super('At least one subtitle segment is required')
-    this.name = 'EmptySegmentsError'
-  }
-}
+import { DEEPSEEK_MODEL, EmptySegmentsError, SHORTS_AI_FEATURE } from '../../domain/constants'
 
 export class ShortsLlmFailedError extends Error {
   constructor(cause?: unknown) {
@@ -79,7 +70,7 @@ export class DetectShortsUseCase {
       promptTokens: result.usage.promptTokens,
       completionTokens: result.usage.completionTokens,
       cost: null,
-      metadata: { nCandidates: result.shorts.length },
+      metadata: { feature: 'detect_shorts', nCandidates: result.shorts.length },
     })
 
     return { candidates: result.shorts }

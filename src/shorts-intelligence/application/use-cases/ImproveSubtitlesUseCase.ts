@@ -3,16 +3,7 @@ import type { ShortsIntelligencePort, SubtitleSegmentInput } from '../../domain/
 import { SubtitleCorrection } from '../../domain/entities/SubtitleCorrection'
 import { SubtitlePromptBuilder } from '../services/SubtitlePromptBuilder'
 import type { UsageEventService } from '../services/UsageEventService'
-
-export const SHORTS_AI_FEATURE = 'shorts_ai'
-const DEEPSEEK_MODEL = 'deepseek-v4-flash'
-
-export class EmptySegmentsError extends Error {
-  constructor() {
-    super('At least one subtitle segment is required')
-    this.name = 'EmptySegmentsError'
-  }
-}
+import { DEEPSEEK_MODEL, EmptySegmentsError, SHORTS_AI_FEATURE } from '../../domain/constants'
 
 export class SubtitlesLlmFailedError extends Error {
   constructor(cause?: unknown) {
@@ -78,7 +69,7 @@ export class ImproveSubtitlesUseCase {
       promptTokens: result.usage.promptTokens,
       completionTokens: result.usage.completionTokens,
       cost: null,
-      metadata: { nCorrections: correctedSubtitles.length },
+      metadata: { feature: 'improve_subtitles', nCorrections: correctedSubtitles.length },
     })
 
     return { summary: result.summary, correctedSubtitles }

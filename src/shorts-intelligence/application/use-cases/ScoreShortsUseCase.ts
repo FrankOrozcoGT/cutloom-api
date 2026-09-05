@@ -4,12 +4,26 @@ import type { ShortsIntelligencePort } from '../../domain/ports/ShortsIntelligen
 import { ShortScorePromptBuilder, type CandidateForScoring } from '../services/ShortScorePromptBuilder'
 import type { ShortIdealJson } from '../services/ShortPromptBuilder'
 import type { UsageEventService } from '../services/UsageEventService'
-import { SHORTS_AI_FEATURE } from './ImproveSubtitlesUseCase'
+import { DEEPSEEK_MODEL, SHORTS_AI_FEATURE } from '../../domain/constants'
 import type { DetectedShortCandidate } from './DetectShortsUseCase'
 
-const DEEPSEEK_MODEL = 'deepseek-v4-flash'
 const MAX_CLIPS = 30
 const MAX_CLIP_SECONDS = 180
+// Tolerancia para comparar start/end de punto flotante que cruzan la frontera HTTP
+// (serialización JSON del cliente, o el LLM repitiendo el número en su respuesta) —
+// una diferencia de sub-milisegundo no debe romper el match candidato<->clip/score.
+const TIME_MATCH_EPSILON_SECONDS = 0.01
+
+function findByTimeRange<T extends { start: number; end: number }>(
+  items: T[],
+  target: { start: number; end: number },
+): T | undefined {
+  return items.find(
+    (item) =>
+      Math.abs(item.start - target.start) < TIME_MATCH_EPSILON_SECONDS &&
+      Math.abs(item.end - target.end) < TIME_MATCH_EPSILON_SECONDS,
+  )
+}
 
 export class EmptyCandidatesError extends Error {
   constructor() {
@@ -125,7 +139,7 @@ export class ScoreShortsUseCase {
       promptTokens: scoringUsage?.promptTokens ?? 0,
       completionTokens: scoringUsage?.completionTokens ?? 0,
       cost: null,
-      metadata: { nShorts: shorts.length, warnings },
+      metadata: { feature: 'score_shorts', nShorts: shorts.length, warnings },
     })
 
     return { shorts, warnings }
@@ -140,8 +154,11 @@ export class ScoreShortsUseCase {
 
     const results = await Promise.all(
       candidates.map(async (candidate) => {
-        const clip = audioClips.find((c) => c.start === candidate.start && c.end === candidate.end)
+        const clip = findByTimeRange(audioClips, candidate)
         if (!clip) {
+          console.error(
+            `[ScoreShortsUseCase] No audio clip found for candidate [${candidate.start}, ${candidate.end}] — treating as failed emotion analysis`,
+          )
           anyFailed = true
           return undefined
         }
@@ -172,7 +189,12 @@ export class ScoreShortsUseCase {
     try {
       const result = await this.shortsIntelligencePort.scoreShorts(prompt)
       const scores = candidates.map((candidate) => {
-        const scored = result.scored.find((s) => s.start === candidate.start && s.end === candidate.end)
+        const scored = findByTimeRange(result.scored, candidate)
+        if (!scored) {
+          console.error(
+            `[ScoreShortsUseCase] LLM did not return a score for candidate [${candidate.start}, ${candidate.end}] — falling back to confidence`,
+          )
+        }
         return scored?.score ?? candidate.confidence
       })
       return { scores, scoringUsage: result.usage }

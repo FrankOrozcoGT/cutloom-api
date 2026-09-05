@@ -7,9 +7,22 @@ export class UsageLimitExceededError extends Error {
   }
 }
 
+export interface AuthorizationContext {
+  entitlement: Entitlement | null
+  /** Tope de uso vigente para el feature según el plan actual del tenant — null = sin tope o sin suscripción. */
+  currentUsageLimit: number | null
+}
+
 export interface EntitlementRepository {
   findByOrganizationAndFeature(organizationId: string, feature: string): Promise<Entitlement | null>
   findByOrganizationId(organizationId: string): Promise<Entitlement[]>
+  /**
+   * Resuelve en una sola consulta (join con subscriptions + plan_features) tanto el
+   * entitlement como el tope de uso vigente del feature — evita 3 round-trips
+   * secuenciales (entitlement, subscription, plan_features) en el camino caliente de
+   * AuthorizeFeatureUsageUseCase.requireEntitlement.
+   */
+  findAuthorizationContext(organizationId: string, feature: string): Promise<AuthorizationContext>
   setActive(organizationId: string, feature: string, active: boolean): Promise<void>
   /** Activa el feature (usageCount arranca/resetea en 0 — activación, renovación o cambio de plan). */
   grant(organizationId: string, feature: string): Promise<void>

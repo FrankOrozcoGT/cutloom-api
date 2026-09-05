@@ -16,6 +16,69 @@ interface DeepSeekChatResponse {
   usage: { prompt_tokens: number; completion_tokens: number }
 }
 
+interface ImproveSubtitlesShape {
+  summary: string
+  correctedSubtitles: { start: number; end: number; text: string }[]
+}
+
+interface DetectShortsShape {
+  shorts: { start: number; end: number; confidence: number; reason: string }[]
+}
+
+interface ScoreShortsShape {
+  scored: { start: number; end: number; score: number }[]
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/** Único punto de validación de forma para respuestas del LLM — de aquí en adelante el tipo se propaga sin recastear. */
+function parseImproveSubtitlesShape(value: unknown): ImproveSubtitlesShape {
+  if (
+    !isRecord(value) ||
+    typeof value.summary !== 'string' ||
+    !Array.isArray(value.correctedSubtitles) ||
+    !value.correctedSubtitles.every(
+      (s) => isRecord(s) && typeof s.start === 'number' && typeof s.end === 'number' && typeof s.text === 'string',
+    )
+  ) {
+    throw new Error('DeepSeek response does not match the expected improveSubtitles shape')
+  }
+  return value as unknown as ImproveSubtitlesShape
+}
+
+function parseDetectShortsShape(value: unknown): DetectShortsShape {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.shorts) ||
+    !value.shorts.every(
+      (s) =>
+        isRecord(s) &&
+        typeof s.start === 'number' &&
+        typeof s.end === 'number' &&
+        typeof s.confidence === 'number' &&
+        typeof s.reason === 'string',
+    )
+  ) {
+    throw new Error('DeepSeek response does not match the expected detectShorts shape')
+  }
+  return value as unknown as DetectShortsShape
+}
+
+function parseScoreShortsShape(value: unknown): ScoreShortsShape {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.scored) ||
+    !value.scored.every(
+      (s) => isRecord(s) && typeof s.start === 'number' && typeof s.end === 'number' && typeof s.score === 'number',
+    )
+  ) {
+    throw new Error('DeepSeek response does not match the expected scoreShorts shape')
+  }
+  return value as unknown as ScoreShortsShape
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 60_000): Promise<Response> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
@@ -31,10 +94,7 @@ export class DeepSeekProvider implements ShortsIntelligencePort {
 
   async improveSubtitles(prompt: string): Promise<ImproveSubtitlesResult> {
     const data = await this.callWithRetry(prompt)
-    const parsed = data.parsed as {
-      summary: string
-      correctedSubtitles: { start: number; end: number; text: string }[]
-    }
+    const parsed = parseImproveSubtitlesShape(data.parsed)
     return {
       summary: parsed.summary,
       correctedSubtitles: parsed.correctedSubtitles,
@@ -44,15 +104,13 @@ export class DeepSeekProvider implements ShortsIntelligencePort {
 
   async detectShorts(prompt: string): Promise<DetectShortsResult> {
     const data = await this.callWithRetry(prompt)
-    const parsed = data.parsed as {
-      shorts: { start: number; end: number; confidence: number; reason: string }[]
-    }
+    const parsed = parseDetectShortsShape(data.parsed)
     return { shorts: parsed.shorts, usage: data.usage }
   }
 
   async scoreShorts(prompt: string): Promise<ScoreShortsResult> {
     const data = await this.callWithRetry(prompt)
-    const parsed = data.parsed as { scored: { start: number; end: number; score: number }[] }
+    const parsed = parseScoreShortsShape(data.parsed)
     return { scored: parsed.scored, usage: data.usage }
   }
 

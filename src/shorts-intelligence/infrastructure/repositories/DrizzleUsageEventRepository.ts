@@ -12,7 +12,7 @@ function toEvent(row: typeof usageEvents.$inferSelect): UsageEvent {
     promptTokens: row.promptTokens,
     completionTokens: row.completionTokens,
     cost: row.cost,
-    metadata: row.metadata as Record<string, unknown>,
+    metadata: row.metadata,
   }
 }
 

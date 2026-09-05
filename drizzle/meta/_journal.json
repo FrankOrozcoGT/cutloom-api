@@ -43,6 +43,13 @@
       "when": 1788108506785,
       "tag": "0005_elite_wrecker",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788599675257,
+      "tag": "0006_white_tiger_shark",
+      "breakpoints": true
     }
   ]
 }
