@@ -77,6 +77,7 @@ export function registerWebhookRoutes(app: FastifyInstance, module: WebhookModul
         }
 
         const payload = JSON.parse(rawBody) as { event_type?: string } & Record<string, unknown>
+        req.log.info({ payload }, 'Recurrente webhook payload received')
 
         if (
           payload.event_type === 'payment_intent.succeeded' ||
