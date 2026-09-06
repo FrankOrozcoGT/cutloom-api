@@ -1,4 +1,5 @@
 import type { SubtitleSegmentInput } from '../../domain/ports/ShortsIntelligencePort'
+import { renderPromptTemplate } from '../../infrastructure/prompts/loadPromptTemplate'
 
 /**
  * Todos los campos son opcionales: si el usuario no los llenó en el form
@@ -21,6 +22,7 @@ export interface BuildShortsPromptInput {
 const DEFAULT_TARGET_DURATION_SECONDS = 45
 const DEFAULT_COUNT = 8
 
+/** Construye el prompt de detección de shorts a partir del template detect-shorts.md (ver loadPromptTemplate). */
 export class ShortPromptBuilder {
   build(input: BuildShortsPromptInput): string {
     const ideal = input.shortIdeal ?? {}
@@ -40,30 +42,13 @@ export class ShortPromptBuilder {
     const durationSeconds = ideal.targetDurationSeconds ?? DEFAULT_TARGET_DURATION_SECONDS
     const count = ideal.count ?? DEFAULT_COUNT
 
-    return `Eres un editor experto en identificar los mejores momentos de un video largo (podcast, entrevista, tutorial) para convertirlos en shorts/clips verticales de alto rendimiento en YouTube Shorts y TikTok.
-
-Criterios de selección usados por editores y herramientas profesionales del mercado:
-- Gancho fuerte en los primeros segundos del clip (una afirmación llamativa, una pregunta, un dato sorprendente).
-- Ritmo: sin relleno, sin rodeos, va directo a la idea.
-- Valor/idea autocontenida: el clip debe entenderse sin contexto externo.
-- Arco emocional claro dentro del tramo.
-
-${topicLine}
-${audienceLine}
-${toneLine}
-Duración objetivo por short: ~${durationSeconds} segundos.
-Cantidad de candidatos a generar: ${count}.
-
-Reglas estrictas:
-- Usa únicamente los tiempos (start/end) de los subtítulos recibidos, no inventes tiempos fuera de ese rango.
-- Cada short debe tener un "confidence" entre 0 y 1 (qué tan seguro estás de que es un buen candidato) y un "reason" breve explicando por qué.
-
-Responde ÚNICAMENTE con un JSON con esta forma exacta:
-{
-  "shorts": [{ "start": number, "end": number, "confidence": number, "reason": "string" }]
-}
-
-Subtítulos del video:
-${JSON.stringify(input.segments)}`
+    return renderPromptTemplate('detect-shorts.md', {
+      topicLine,
+      audienceLine,
+      toneLine,
+      durationSeconds: String(durationSeconds),
+      count: String(count),
+      segments: JSON.stringify(input.segments),
+    })
   }
 }

@@ -26,7 +26,7 @@ interface DetectShortsShape {
 }
 
 interface ScoreShortsShape {
-  scored: { start: number; end: number; score: number }[]
+  scored: { index: number; score: number }[]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -70,9 +70,7 @@ function parseScoreShortsShape(value: unknown): ScoreShortsShape {
   if (
     !isRecord(value) ||
     !Array.isArray(value.scored) ||
-    !value.scored.every(
-      (s) => isRecord(s) && typeof s.start === 'number' && typeof s.end === 'number' && typeof s.score === 'number',
-    )
+    !value.scored.every((s) => isRecord(s) && typeof s.index === 'number' && typeof s.score === 'number')
   ) {
     throw new Error('DeepSeek response does not match the expected scoreShorts shape')
   }

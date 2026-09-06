@@ -23,8 +23,7 @@ export interface DetectShortsResult {
 }
 
 export interface ScoredShortResult {
-  start: number
-  end: number
+  index: number
   score: number
 }
 

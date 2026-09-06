@@ -1,4 +1,4 @@
-import type { AuthorizeFeatureUsageUseCase } from '../../../billing/application/use-cases/AuthorizeFeatureUsageUseCase'
+import type { FeatureUsageAuthorizer } from '../../domain/ports/FeatureUsageAuthorizer'
 import type { EmotionAnalyzerPort } from '../../domain/ports/EmotionAnalyzerPort'
 import type { ShortsIntelligencePort } from '../../domain/ports/ShortsIntelligencePort'
 import { ShortScorePromptBuilder, type CandidateForScoring } from '../services/ShortScorePromptBuilder'
@@ -9,21 +9,6 @@ import type { DetectedShortCandidate } from './DetectShortsUseCase'
 
 const MAX_CLIPS = 30
 const MAX_CLIP_SECONDS = 180
-// Tolerancia para comparar start/end de punto flotante que cruzan la frontera HTTP
-// (serialización JSON del cliente, o el LLM repitiendo el número en su respuesta) —
-// una diferencia de sub-milisegundo no debe romper el match candidato<->clip/score.
-const TIME_MATCH_EPSILON_SECONDS = 0.01
-
-function findByTimeRange<T extends { start: number; end: number }>(
-  items: T[],
-  target: { start: number; end: number },
-): T | undefined {
-  return items.find(
-    (item) =>
-      Math.abs(item.start - target.start) < TIME_MATCH_EPSILON_SECONDS &&
-      Math.abs(item.end - target.end) < TIME_MATCH_EPSILON_SECONDS,
-  )
-}
 
 export class EmptyCandidatesError extends Error {
   constructor() {
@@ -47,9 +32,9 @@ export class InvalidAudioSegmentError extends Error {
 }
 
 export interface AudioClipForShort {
-  start: number
-  end: number
-  audioBase64: string
+  /** id del DetectedShortCandidate al que corresponde este clip — clave explícita en vez de posición de array, para que un reordenamiento/filtrado del array en el frontend no desincronice el match. */
+  candidateId: string
+  audioBuffer: Buffer
 }
 
 export interface ScoreShortsInput {
@@ -81,7 +66,7 @@ export interface ScoreShortsOutput {
  */
 export class ScoreShortsUseCase {
   constructor(
-    private readonly authorizeFeatureUsageUseCase: AuthorizeFeatureUsageUseCase,
+    private readonly featureUsageAuthorizer: FeatureUsageAuthorizer,
     private readonly shortsIntelligencePort: ShortsIntelligencePort,
     private readonly emotionAnalyzerPort: EmotionAnalyzerPort,
     private readonly shortScorePromptBuilder: ShortScorePromptBuilder,
@@ -95,13 +80,15 @@ export class ScoreShortsUseCase {
     if (input.audioClips.length > MAX_CLIPS) {
       throw new TooManyClipsError(input.audioClips.length)
     }
+    const candidateById = new Map(input.candidates.map((c) => [c.id, c]))
     for (const clip of input.audioClips) {
-      if (clip.end - clip.start > MAX_CLIP_SECONDS || clip.end <= clip.start) {
-        throw new InvalidAudioSegmentError(clip.start, clip.end)
+      const candidate = candidateById.get(clip.candidateId)
+      if (!candidate || candidate.end - candidate.start > MAX_CLIP_SECONDS || candidate.end <= candidate.start) {
+        throw new InvalidAudioSegmentError(candidate?.start ?? 0, candidate?.end ?? 0)
       }
     }
 
-    await this.authorizeFeatureUsageUseCase.requireEntitlement({
+    await this.featureUsageAuthorizer.requireEntitlement({
       organizationId: input.organizationId,
       feature: SHORTS_AI_FEATURE,
     })
@@ -111,6 +98,7 @@ export class ScoreShortsUseCase {
     const emotionByCandidate = await this.analyzeEmotions(input.candidates, input.audioClips, warnings)
 
     const candidatesForScoring: CandidateForScoring[] = input.candidates.map((candidate, index) => ({
+      index,
       start: candidate.start,
       end: candidate.end,
       confidence: candidate.confidence,
@@ -151,10 +139,11 @@ export class ScoreShortsUseCase {
     warnings: string[],
   ): Promise<(string | undefined)[]> {
     let anyFailed = false
+    const clipByCandidateId = new Map(audioClips.map((clip) => [clip.candidateId, clip]))
 
     const results = await Promise.all(
       candidates.map(async (candidate) => {
-        const clip = findByTimeRange(audioClips, candidate)
+        const clip = clipByCandidateId.get(candidate.id)
         if (!clip) {
           console.error(
             `[ScoreShortsUseCase] No audio clip found for candidate [${candidate.start}, ${candidate.end}] — treating as failed emotion analysis`,
@@ -163,9 +152,13 @@ export class ScoreShortsUseCase {
           return undefined
         }
         try {
-          const { emotion } = await this.emotionAnalyzerPort.analyze(clip.audioBase64)
+          const { emotion } = await this.emotionAnalyzerPort.analyze(clip.audioBuffer)
           return emotion
-        } catch {
+        } catch (error) {
+          console.error(
+            `[ScoreShortsUseCase] Emotion analysis failed for candidate [${candidate.start}, ${candidate.end}]`,
+            error,
+          )
           anyFailed = true
           return undefined
         }
@@ -188,14 +181,15 @@ export class ScoreShortsUseCase {
 
     try {
       const result = await this.shortsIntelligencePort.scoreShorts(prompt)
+      const scoreByIndex = new Map(result.scored.map((s) => [s.index, s.score]))
       const scores = candidates.map((candidate) => {
-        const scored = findByTimeRange(result.scored, candidate)
-        if (!scored) {
+        const score = scoreByIndex.get(candidate.index)
+        if (score === undefined) {
           console.error(
             `[ScoreShortsUseCase] LLM did not return a score for candidate [${candidate.start}, ${candidate.end}] — falling back to confidence`,
           )
         }
-        return scored?.score ?? candidate.confidence
+        return score ?? candidate.confidence
       })
       return { scores, scoringUsage: result.usage }
     } catch {

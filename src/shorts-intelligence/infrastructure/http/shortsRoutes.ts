@@ -41,36 +41,11 @@ const detectShortsBodySchema = {
   },
 } as const
 
-const candidateSchema = {
-  type: 'object',
-  required: ['start', 'end', 'confidence', 'reason'],
-  properties: {
-    start: { type: 'number' },
-    end: { type: 'number' },
-    confidence: { type: 'number' },
-    reason: { type: 'string' },
-  },
-} as const
-
-const audioClipSchema = {
-  type: 'object',
-  required: ['start', 'end', 'audioBase64'],
-  properties: {
-    start: { type: 'number' },
-    end: { type: 'number' },
-    audioBase64: { type: 'string' },
-  },
-} as const
-
-const scoreShortsBodySchema = {
-  type: 'object',
-  required: ['candidates', 'audioClips'],
-  properties: {
-    candidates: { type: 'array', items: candidateSchema },
-    shortIdealJson: shortIdealJsonSchema,
-    audioClips: { type: 'array', items: audioClipSchema },
-  },
-} as const
+// Fastify's global bodyLimit (default 1MB) would reject this route's multipart body
+// before @fastify/multipart's own per-file limit even applies — POST /score can carry
+// up to 30 audio clips (MAX_CLIPS/MAX_CLIP_SECONDS in ScoreShortsUseCase, ~5.7MB each
+// at 180s mono 16kHz), so only this route raises its own bodyLimit.
+const SCORE_SHORTS_BODY_LIMIT_BYTES = 150 * 1024 * 1024
 
 export function registerShortsRoutes(
   app: FastifyInstance,
@@ -91,9 +66,11 @@ export function registerShortsRoutes(
         (req, reply) => controller.detectShorts(req, reply),
       )
 
+      // multipart/form-data: sin JSON Schema de body (no aplica) — ver ShortsController.scoreShorts
+      // para el parseo y validación manual del campo "payload" y los archivos de audio.
       shortsApp.post(
         '/score',
-        { preHandler: authMiddleware, schema: { body: scoreShortsBodySchema } },
+        { preHandler: authMiddleware, bodyLimit: SCORE_SHORTS_BODY_LIMIT_BYTES },
         (req, reply) => controller.scoreShorts(req, reply),
       )
 

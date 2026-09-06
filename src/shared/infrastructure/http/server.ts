@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
+import multipart from '@fastify/multipart'
 import { db } from '../db/client'
 import { buildAuthModule } from '../../../identity/infrastructure/composition/authComposition'
 import { registerAuthRoutes } from '../../../identity/infrastructure/http/authRoutes'
@@ -27,6 +28,9 @@ export function buildServer() {
     credentials: true,
   })
   app.register(cookie)
+  // Límites alineados con ScoreShortsUseCase (MAX_CLIPS=30, MAX_CLIP_SECONDS=180 — un WAV
+  // mono 16kHz de 180s pesa ~5.7MB, 10MB deja margen sin abrir la puerta a payloads arbitrarios).
+  app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: 30 } })
 
   const billingModule = buildBillingModule(db)
 
@@ -40,7 +44,9 @@ export function buildServer() {
   registerWebhookRoutes(app, billingModule.webhookModule)
   registerDonationRoutes(app, billingModule.createDonationUseCase, billingModule.donationRoutesConfig)
 
-  const shortsModule = buildShortsModule(db, billingModule.authorizeFeatureUsageUseCase)
+  const shortsModule = buildShortsModule(db, {
+    requireEntitlement: (input) => billingModule.authorizeFeatureUsageUseCase.requireEntitlement(input),
+  })
   registerShortsRoutes(app, shortsModule.controller, authMiddleware)
 
   app.get('/health', () => ({ status: 'ok' }))

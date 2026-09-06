@@ -1,4 +1,4 @@
-import type { AuthorizeFeatureUsageUseCase } from '../../../billing/application/use-cases/AuthorizeFeatureUsageUseCase'
+import type { FeatureUsageAuthorizer } from '../../domain/ports/FeatureUsageAuthorizer'
 import type { ShortsIntelligencePort, SubtitleSegmentInput } from '../../domain/ports/ShortsIntelligencePort'
 import { SubtitleCorrection } from '../../domain/entities/SubtitleCorrection'
 import { SubtitlePromptBuilder } from '../services/SubtitlePromptBuilder'
@@ -26,7 +26,7 @@ export interface ImproveSubtitlesOutput {
 
 export class ImproveSubtitlesUseCase {
   constructor(
-    private readonly authorizeFeatureUsageUseCase: AuthorizeFeatureUsageUseCase,
+    private readonly featureUsageAuthorizer: FeatureUsageAuthorizer,
     private readonly shortsIntelligencePort: ShortsIntelligencePort,
     private readonly promptBuilder: SubtitlePromptBuilder,
     private readonly usageEventService: UsageEventService,
@@ -37,7 +37,7 @@ export class ImproveSubtitlesUseCase {
       throw new EmptySegmentsError()
     }
 
-    await this.authorizeFeatureUsageUseCase.requireEntitlement({
+    await this.featureUsageAuthorizer.requireEntitlement({
       organizationId: input.organizationId,
       feature: SHORTS_AI_FEATURE,
     })

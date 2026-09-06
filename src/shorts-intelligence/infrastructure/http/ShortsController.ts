@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { FeatureAccessDeniedError } from '../../../billing/application/use-cases/AuthorizeFeatureUsageUseCase'
+import { FeatureAccessDeniedError } from '../../domain/ports/FeatureUsageAuthorizer'
 import { EmptySegmentsError } from '../../domain/constants'
 import { SubtitlesLlmFailedError, type ImproveSubtitlesUseCase } from '../../application/use-cases/ImproveSubtitlesUseCase'
 import {
@@ -27,10 +27,77 @@ interface DetectShortsBody {
   shortIdealJson?: ShortIdealJson
 }
 
-interface ScoreShortsBody {
+interface ScoreShortsPayload {
   candidates: DetectedShortCandidate[]
   shortIdealJson?: ShortIdealJson
-  audioClips: AudioClipForShort[]
+}
+
+export class InvalidScoreShortsPayloadError extends Error {
+  constructor(reason: string) {
+    super(`Invalid score shorts payload: ${reason}`)
+    this.name = 'InvalidScoreShortsPayloadError'
+  }
+}
+
+function isDetectedShortCandidate(value: unknown): value is DetectedShortCandidate {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).id === 'string' &&
+    typeof (value as Record<string, unknown>).start === 'number' &&
+    typeof (value as Record<string, unknown>).end === 'number' &&
+    typeof (value as Record<string, unknown>).confidence === 'number' &&
+    typeof (value as Record<string, unknown>).reason === 'string'
+  )
+}
+
+function isOptional<T>(value: unknown, check: (v: unknown) => v is T): value is T | undefined {
+  return value === undefined || check(value)
+}
+
+function isShortIdealJson(value: unknown): value is ShortIdealJson {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+  const v = value as Record<string, unknown>
+  return (
+    isOptional(v.topic, (x): x is string => typeof x === 'string') &&
+    isOptional(v.targetAudience, (x): x is string => typeof x === 'string') &&
+    isOptional(v.targetDurationSeconds, (x): x is number => typeof x === 'number') &&
+    isOptional(v.tone, (x): x is string => typeof x === 'string') &&
+    isOptional(v.count, (x): x is number => typeof x === 'number')
+  )
+}
+
+/** Único punto de validación del JSON crudo del campo "payload" del multipart — de aquí en adelante el tipo se propaga sin recastear. */
+function parseScoreShortsPayload(raw: string): ScoreShortsPayload {
+  let value: unknown
+  try {
+    value = JSON.parse(raw)
+  } catch {
+    throw new InvalidScoreShortsPayloadError('"payload" is not valid JSON')
+  }
+  if (typeof value !== 'object' || value === null) {
+    throw new InvalidScoreShortsPayloadError('"payload" must be a JSON object')
+  }
+  const candidates = (value as Record<string, unknown>).candidates
+  if (!Array.isArray(candidates) || !candidates.every(isDetectedShortCandidate)) {
+    throw new InvalidScoreShortsPayloadError(
+      '"payload.candidates" must be an array of {id,start,end,confidence,reason}',
+    )
+  }
+  const shortIdealJson = (value as Record<string, unknown>).shortIdealJson
+  if (!isOptional(shortIdealJson, isShortIdealJson)) {
+    throw new InvalidScoreShortsPayloadError(
+      '"payload.shortIdealJson" must be an object with optional {topic,targetAudience,targetDurationSeconds,tone,count}',
+    )
+  }
+  return { candidates, shortIdealJson }
+}
+
+/** Fieldname que el frontend usa para el archivo de audio de un candidato — ver contrato de POST /api/shorts/score. */
+function audioFieldName(candidateId: string): string {
+  return `audio_${candidateId}`
 }
 
 export class ShortsController {
@@ -99,22 +166,54 @@ export class ShortsController {
     }
   }
 
+  /**
+   * multipart/form-data: un campo de texto "payload" (JSON con candidates +
+   * shortIdealJson) y un archivo de audio por candidato, nombrado
+   * "audio_<candidate.id>" (ver audioFieldName) — usar el id explícito en vez
+   * de la posición en el array evita que un reordenamiento/filtrado del array
+   * en el frontend desincronice el audio con el candidato equivocado. Los
+   * clips son binarios reales, no base64 embebido en JSON.
+   */
   async scoreShorts(req: FastifyRequest, reply: FastifyReply) {
     if (!req.organizationId) {
       return reply.status(400).send({ error: 'MISSING_ORGANIZATION' })
     }
 
-    const body = req.body as ScoreShortsBody
-
     try {
+      let payload: ScoreShortsPayload | undefined
+      const audioBuffersByField = new Map<string, Buffer>()
+
+      for await (const part of req.parts()) {
+        if (part.type === 'file') {
+          audioBuffersByField.set(part.fieldname, await part.toBuffer())
+        } else if (part.fieldname === 'payload') {
+          payload = parseScoreShortsPayload(part.value as string)
+        }
+      }
+
+      if (!payload) {
+        throw new InvalidScoreShortsPayloadError('missing "payload" field')
+      }
+
+      const audioClips: AudioClipForShort[] = []
+      for (const candidate of payload.candidates) {
+        const buffer = audioBuffersByField.get(audioFieldName(candidate.id))
+        if (buffer) {
+          audioClips.push({ candidateId: candidate.id, audioBuffer: buffer })
+        }
+      }
+
       const result = await this.scoreShortsUseCase.execute({
         organizationId: req.organizationId,
-        candidates: body.candidates,
-        shortIdealJson: body.shortIdealJson,
-        audioClips: body.audioClips,
+        candidates: payload.candidates,
+        shortIdealJson: payload.shortIdealJson,
+        audioClips,
       })
       return reply.status(200).send(result)
     } catch (error) {
+      if (error instanceof InvalidScoreShortsPayloadError) {
+        return reply.status(400).send({ error: 'INVALID_PAYLOAD', message: error.message })
+      }
       if (error instanceof EmptyCandidatesError) {
         return reply.status(400).send({ error: 'EMPTY_CANDIDATES' })
       }

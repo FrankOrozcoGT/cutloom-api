@@ -1,4 +1,4 @@
-import type { AuthorizeFeatureUsageUseCase } from '../../../billing/application/use-cases/AuthorizeFeatureUsageUseCase'
+import type { FeatureUsageAuthorizer } from '../../domain/ports/FeatureUsageAuthorizer'
 import type { ShortsIntelligencePort, SubtitleSegmentInput } from '../../domain/ports/ShortsIntelligencePort'
 import { ShortPromptBuilder, type ShortIdealJson } from '../services/ShortPromptBuilder'
 import type { UsageEventService } from '../services/UsageEventService'
@@ -19,6 +19,7 @@ export interface DetectShortsInput {
 }
 
 export interface DetectedShortCandidate {
+  id: string
   start: number
   end: number
   confidence: number
@@ -37,7 +38,7 @@ export interface DetectShortsOutput {
  */
 export class DetectShortsUseCase {
   constructor(
-    private readonly authorizeFeatureUsageUseCase: AuthorizeFeatureUsageUseCase,
+    private readonly featureUsageAuthorizer: FeatureUsageAuthorizer,
     private readonly shortsIntelligencePort: ShortsIntelligencePort,
     private readonly shortPromptBuilder: ShortPromptBuilder,
     private readonly usageEventService: UsageEventService,
@@ -48,7 +49,7 @@ export class DetectShortsUseCase {
       throw new EmptySegmentsError()
     }
 
-    await this.authorizeFeatureUsageUseCase.requireEntitlement({
+    await this.featureUsageAuthorizer.requireEntitlement({
       organizationId: input.organizationId,
       feature: SHORTS_AI_FEATURE,
     })
@@ -73,6 +74,7 @@ export class DetectShortsUseCase {
       metadata: { feature: 'detect_shorts', nCandidates: result.shorts.length },
     })
 
-    return { candidates: result.shorts }
+    const candidates = result.shorts.map((short) => ({ id: crypto.randomUUID(), ...short }))
+    return { candidates }
   }
 }
