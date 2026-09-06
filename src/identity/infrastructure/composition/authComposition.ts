@@ -33,15 +33,15 @@ export function buildAuthModule(db: Database, entitlementsReader: EntitlementsRe
   const passwordHasher = new BcryptPasswordHasher()
   const tokenService = new JwtTokenService({
     secret: readEnv('JWT_SECRET', process.env.NODE_ENV === 'production' ? undefined : 'dev-only-secret-change-me-32-chars'),
-    accessTokenExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
-    refreshTokenExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '30d',
+    accessTokenExpiresIn: readEnv('JWT_ACCESS_EXPIRES_IN', '15m'),
+    refreshTokenExpiresIn: readEnv('JWT_REFRESH_EXPIRES_IN', '30d'),
   })
 
   const authDomainService = new AuthDomainService(organizationRepository, userRepository, membershipRepository)
 
   const googleProvider = new GoogleIdentityProvider({
-    clientId: process.env.GOOGLE_CLIENT_ID ?? '',
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+    clientId: readEnv('GOOGLE_CLIENT_ID', process.env.NODE_ENV === 'production' ? undefined : 'dev-placeholder'),
+    clientSecret: readEnv('GOOGLE_CLIENT_SECRET', process.env.NODE_ENV === 'production' ? undefined : 'dev-placeholder'),
     redirectUri: readEnv('GOOGLE_REDIRECT_URI', 'http://localhost:3000/api/auth/google/callback'),
   })
 
