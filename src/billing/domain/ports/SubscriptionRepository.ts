@@ -18,7 +18,6 @@ export interface SubscriptionRepository {
   updateStatus(id: string, status: SubscriptionStatus): Promise<void>
   extendPeriod(id: string, currentPeriodStart: Date, currentPeriodEnd: Date): Promise<void>
   markPastDue(id: string, gracePeriodEndsAt: Date): Promise<void>
-  clearPastDue(id: string): Promise<void>
   setCancelAtPeriodEnd(id: string, cancelAtPeriodEnd: boolean): Promise<void>
   updatePlan(id: string, planId: string, currentPeriodStart: Date, currentPeriodEnd: Date): Promise<void>
   findExpiredPendingCancellation(now: Date): Promise<Subscription[]>

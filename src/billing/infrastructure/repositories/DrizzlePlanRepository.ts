@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import type { Database } from '../../../shared/infrastructure/db/client'
 import { planFeatures, plans } from '../db/schema'
 import { Plan } from '../../domain/entities/Plan'
@@ -39,7 +39,24 @@ export class DrizzlePlanRepository implements PlanRepository {
   }
 
   async findFeaturesByPlanId(planId: string): Promise<PlanFeature[]> {
-    const rows = await this.db.select().from(planFeatures).where(eq(planFeatures.planId, planId))
-    return rows.map(toFeatureEntity)
+    const byPlanId = await this.findFeaturesByPlanIds([planId])
+    return byPlanId.get(planId) ?? []
+  }
+
+  async findFeaturesByPlanIds(planIds: string[]): Promise<Map<string, PlanFeature[]>> {
+    if (planIds.length === 0) return new Map()
+
+    const rows = await this.db.select().from(planFeatures).where(inArray(planFeatures.planId, planIds))
+    const byPlanId = new Map<string, PlanFeature[]>()
+    for (const row of rows) {
+      const feature = toFeatureEntity(row)
+      const existing = byPlanId.get(feature.planId)
+      if (existing) {
+        existing.push(feature)
+      } else {
+        byPlanId.set(feature.planId, [feature])
+      }
+    }
+    return byPlanId
   }
 }

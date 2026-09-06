@@ -51,5 +51,11 @@ export function buildServer() {
 
   app.get('/health', () => ({ status: 'ok' }))
 
+  Bun.cron('0 * * * *', () => {
+    billingModule.expireCancelledSubscriptionsUseCase.execute().catch((error: unknown) => {
+      app.log.error({ error }, 'expireCancelledSubscriptionsUseCase failed')
+    })
+  })
+
   return app
 }

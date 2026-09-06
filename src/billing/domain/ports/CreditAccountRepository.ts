@@ -9,7 +9,6 @@ export class InsufficientCreditsError extends Error {
 
 export interface CreditAccountRepository {
   findOrCreateByOrganizationId(organizationId: string): Promise<CreditAccount>
-  findTransactionByCheckoutId(recurrenteCheckoutId: string): Promise<{ id: string } | null>
   /** Suma amount al balance (positivo) y registra la transacción; idempotente por checkoutId. */
   addCredits(organizationId: string, amount: number, recurrenteCheckoutId: string): Promise<CreditAccount>
   /** Descuenta amount del balance; lanza InsufficientCreditsError si dejaría el balance negativo. */

@@ -53,19 +53,6 @@ export class DrizzleEntitlementRepository implements EntitlementRepository {
     }
   }
 
-  async setActive(organizationId: string, feature: string, active: boolean): Promise<void> {
-    if (!active) {
-      return this.deactivateAll(organizationId, [feature])
-    }
-    await this.db
-      .insert(entitlements)
-      .values({ organizationId, feature, active })
-      .onConflictDoUpdate({
-        target: [entitlements.organizationId, entitlements.feature],
-        set: { active, updatedAt: new Date() },
-      })
-  }
-
   async grant(organizationId: string, feature: string): Promise<void> {
     return this.grantAll(organizationId, [feature])
   }

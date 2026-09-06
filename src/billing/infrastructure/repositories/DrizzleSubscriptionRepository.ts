@@ -108,13 +108,6 @@ export class DrizzleSubscriptionRepository implements SubscriptionRepository {
       .where(eq(subscriptions.id, id))
   }
 
-  async clearPastDue(id: string): Promise<void> {
-    await this.db
-      .update(subscriptions)
-      .set({ gracePeriodEndsAt: null, updatedAt: new Date() })
-      .where(eq(subscriptions.id, id))
-  }
-
   async setCancelAtPeriodEnd(id: string, cancelAtPeriodEnd: boolean): Promise<void> {
     await this.db
       .update(subscriptions)

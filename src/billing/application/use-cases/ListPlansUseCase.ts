@@ -21,19 +21,15 @@ export class ListPlansUseCase {
 
   async execute(): Promise<PlanSummary[]> {
     const plans = await this.planRepository.findAll()
+    const featuresByPlanId = await this.planRepository.findFeaturesByPlanIds(plans.map((p) => p.id))
 
-    return Promise.all(
-      plans.map(async (plan) => {
-        const features = await this.planRepository.findFeaturesByPlanId(plan.id)
-        return {
-          id: plan.id,
-          name: plan.name,
-          amountInCents: plan.amountInCents,
-          currency: plan.currency,
-          interval: plan.interval,
-          features: features.map((f) => ({ feature: f.feature, usageLimit: f.usageLimit })),
-        }
-      }),
-    )
+    return plans.map((plan) => ({
+      id: plan.id,
+      name: plan.name,
+      amountInCents: plan.amountInCents,
+      currency: plan.currency,
+      interval: plan.interval,
+      features: (featuresByPlanId.get(plan.id) ?? []).map((f) => ({ feature: f.feature, usageLimit: f.usageLimit })),
+    }))
   }
 }

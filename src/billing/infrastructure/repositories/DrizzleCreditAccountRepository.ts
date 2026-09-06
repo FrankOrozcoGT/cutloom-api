@@ -31,15 +31,6 @@ export class DrizzleCreditAccountRepository implements CreditAccountRepository {
     return toEntity(existing)
   }
 
-  async findTransactionByCheckoutId(recurrenteCheckoutId: string): Promise<{ id: string } | null> {
-    const [row] = await this.db
-      .select({ id: creditTransactions.id })
-      .from(creditTransactions)
-      .where(eq(creditTransactions.recurrenteCheckoutId, recurrenteCheckoutId))
-      .limit(1)
-    return row ?? null
-  }
-
   async addCredits(organizationId: string, amount: number, recurrenteCheckoutId: string): Promise<CreditAccount> {
     return this.db.transaction(async (tx) => {
       const existingTx = await tx

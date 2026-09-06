@@ -5,9 +5,8 @@ import type { SubscriptionRepository } from '../../domain/ports/SubscriptionRepo
 /**
  * Recurrente no soporta cancelación "al fin de período" nativamente: cancelamos ya
  * mismo (CancelSubscriptionUseCase) pero mantenemos el entitlement activo hasta
- * currentPeriodEnd, ya que el ciclo se pagó por adelantado. Este use case es el que
- * efectivamente aplica el downgrade cuando ese período vence — pensado para correr
- * periódicamente (cron) o de forma lazy antes de resolver el entitlement de un tenant.
+ * currentPeriodEnd, ya que el ciclo se pagó por adelantado. Este use case aplica el
+ * downgrade cuando ese período vence — corre cada hora vía Bun.cron (ver server.ts).
  */
 export class ExpireCancelledSubscriptionsUseCase {
   constructor(
@@ -18,14 +17,22 @@ export class ExpireCancelledSubscriptionsUseCase {
 
   async execute(now: Date = new Date()): Promise<void> {
     const expired = await this.subscriptionRepository.findExpiredPendingCancellation(now)
-
-    for (const subscription of expired) {
-      await this.subscriptionRepository.updateStatus(subscription.id, 'inactive')
-      const planFeatures = await this.planRepository.findFeaturesByPlanId(subscription.planId)
-      await this.entitlementRepository.deactivateAll(
-        subscription.organizationId,
-        planFeatures.map((f) => f.feature),
-      )
+    if (expired.length === 0) {
+      return
     }
+
+    const uniquePlanIds = [...new Set(expired.map((s) => s.planId))]
+    const featuresByPlanId = await this.planRepository.findFeaturesByPlanIds(uniquePlanIds)
+
+    await Promise.all(
+      expired.map(async (subscription) => {
+        await this.subscriptionRepository.updateStatus(subscription.id, 'inactive')
+        const features = featuresByPlanId.get(subscription.planId) ?? []
+        await this.entitlementRepository.deactivateAll(
+          subscription.organizationId,
+          features.map((f) => f.feature),
+        )
+      }),
+    )
   }
 }
