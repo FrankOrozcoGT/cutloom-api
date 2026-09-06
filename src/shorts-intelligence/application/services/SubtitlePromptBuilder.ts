@@ -6,12 +6,7 @@ export interface BuildImproveSubtitlesPromptInput {
   userContext?: string
 }
 
-/**
- * Construye el prompt de corrección de subtítulos a partir del template
- * improve-subtitles.md (ver loadPromptTemplate) — preserva start/end en el
- * payload para que el LLM no tenga motivo (ni instrucción) para tocarlos —
- * solo debe corregir el campo `text`.
- */
+/** El payload incluye start/end de cada segmento sin pedirle al LLM que los toque, para que solo tenga oportunidad de modificar `text`. */
 export class SubtitlePromptBuilder {
   build(input: BuildImproveSubtitlesPromptInput): string {
     const contextBlock = input.userContext

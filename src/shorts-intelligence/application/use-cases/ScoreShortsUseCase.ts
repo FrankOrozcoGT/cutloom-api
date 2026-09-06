@@ -32,7 +32,7 @@ export class InvalidAudioSegmentError extends Error {
 }
 
 export interface AudioClipForShort {
-  /** id del DetectedShortCandidate al que corresponde este clip — clave explícita en vez de posición de array, para que un reordenamiento/filtrado del array en el frontend no desincronice el match. */
+  /** id del DetectedShortCandidate al que corresponde este clip. */
   candidateId: string
   audioBuffer: Buffer
 }

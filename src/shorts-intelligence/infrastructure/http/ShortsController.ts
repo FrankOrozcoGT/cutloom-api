@@ -169,10 +169,7 @@ export class ShortsController {
   /**
    * multipart/form-data: un campo de texto "payload" (JSON con candidates +
    * shortIdealJson) y un archivo de audio por candidato, nombrado
-   * "audio_<candidate.id>" (ver audioFieldName) — usar el id explícito en vez
-   * de la posición en el array evita que un reordenamiento/filtrado del array
-   * en el frontend desincronice el audio con el candidato equivocado. Los
-   * clips son binarios reales, no base64 embebido en JSON.
+   * "audio_<candidate.id>" (ver audioFieldName).
    */
   async scoreShorts(req: FastifyRequest, reply: FastifyReply) {
     if (!req.organizationId) {

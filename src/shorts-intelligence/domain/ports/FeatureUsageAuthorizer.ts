@@ -5,11 +5,7 @@ export class FeatureAccessDeniedError extends Error {
   }
 }
 
-/**
- * Puerto propio de shorts-intelligence para no depender del bounded context de
- * billing: el composition root del server inyecta un adaptador respaldado por
- * el AuthorizeFeatureUsageUseCase real de billing (ver server.ts).
- */
+/** Puerto de shorts-intelligence: billing es dueño de la autorización real, inyectada como adaptador desde el composition root (ver server.ts). */
 export interface FeatureUsageAuthorizer {
   requireEntitlement(input: { organizationId: string; feature: string }): Promise<void>
 }
