@@ -1,3 +1,4 @@
+import { UsageLimitExceededError } from '../../domain/ports/EntitlementRepository'
 import type { EntitlementRepository } from '../../domain/ports/EntitlementRepository'
 
 export class FeatureAccessDeniedError extends Error {
@@ -37,6 +38,16 @@ export class AuthorizeFeatureUsageUseCase {
       throw new FeatureAccessDeniedError(input.feature)
     }
 
-    await this.entitlementRepository.incrementUsage(input.organizationId, input.feature, currentUsageLimit)
+    try {
+      await this.entitlementRepository.incrementUsage(input.organizationId, input.feature, currentUsageLimit)
+    } catch (error) {
+      if (error instanceof UsageLimitExceededError) {
+        // Tope agotado por otra request concurrente entre el chequeo de arriba y el
+        // incremento atómico — mismo resultado observable para el caller que el chequeo
+        // "normal" de tope agotado.
+        throw new FeatureAccessDeniedError(input.feature)
+      }
+      throw error
+    }
   }
 }

@@ -1,4 +1,5 @@
 import type { Database } from '../../../shared/infrastructure/db/client'
+import { readEnv } from '../../../shared/infrastructure/config/readEnv'
 import { DrizzleUserRepository } from '../repositories/DrizzleUserRepository'
 import { DrizzleOrganizationRepository } from '../repositories/DrizzleOrganizationRepository'
 import { DrizzleMembershipRepository } from '../repositories/DrizzleMembershipRepository'
@@ -16,14 +17,6 @@ import { AuthController } from '../http/AuthController'
 import { createAuthMiddleware } from '../http/authMiddleware'
 import type { IdentityProvider } from '../../domain/ports/IdentityProvider'
 import type { EntitlementsReader } from '../../domain/ports/EntitlementsReader'
-
-function readEnv(name: string, fallback?: string): string {
-  const value = process.env[name] ?? fallback
-  if (value === undefined) {
-    throw new Error(`Missing required environment variable: ${name}`)
-  }
-  return value
-}
 
 export interface AuthModule {
   controller: AuthController

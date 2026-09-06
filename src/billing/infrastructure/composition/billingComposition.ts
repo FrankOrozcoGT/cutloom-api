@@ -1,4 +1,5 @@
 import type { Database } from '../../../shared/infrastructure/db/client'
+import { readEnv } from '../../../shared/infrastructure/config/readEnv'
 import { DrizzlePlanRepository } from '../repositories/DrizzlePlanRepository'
 import { DrizzleSubscriptionRepository } from '../repositories/DrizzleSubscriptionRepository'
 import { DrizzleEntitlementRepository } from '../repositories/DrizzleEntitlementRepository'
@@ -23,14 +24,6 @@ import { ListPlansUseCase } from '../../application/use-cases/ListPlansUseCase'
 import { BillingController } from '../http/BillingController'
 import type { WebhookModule } from '../http/webhookRoutes'
 import type { EntitlementRepository } from '../../domain/ports/EntitlementRepository'
-
-function readEnv(name: string, fallback?: string): string {
-  const value = process.env[name] ?? fallback
-  if (value === undefined) {
-    throw new Error(`Missing required environment variable: ${name}`)
-  }
-  return value
-}
 
 export interface BillingModule {
   controller: BillingController

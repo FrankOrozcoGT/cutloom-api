@@ -9,8 +9,10 @@ import { buildBillingModule } from '../../../billing/infrastructure/composition/
 import { registerBillingRoutes } from '../../../billing/infrastructure/http/billingRoutes'
 import { registerWebhookRoutes } from '../../../billing/infrastructure/http/webhookRoutes'
 import { registerDonationRoutes } from '../../../billing/infrastructure/http/donationRoutes'
+import { FeatureAccessDeniedError as BillingFeatureAccessDeniedError } from '../../../billing/application/use-cases/AuthorizeFeatureUsageUseCase'
 import { buildShortsModule } from '../../../shorts-intelligence/infrastructure/composition/shortsComposition'
 import { registerShortsRoutes } from '../../../shorts-intelligence/infrastructure/http/shortsRoutes'
+import { FeatureAccessDeniedError as ShortsFeatureAccessDeniedError } from '../../../shorts-intelligence/domain/ports/FeatureUsageAuthorizer'
 
 function corsOrigins(): string[] {
   const raw = process.env.CORS_ORIGINS
@@ -35,8 +37,10 @@ export function buildServer() {
   const billingModule = buildBillingModule(db)
 
   const { controller: authController, authMiddleware } = buildAuthModule(db, {
-    findByOrganizationId: (organizationId) =>
-      billingModule.entitlementRepository.findByOrganizationId(organizationId),
+    findByOrganizationId: async (organizationId) => {
+      const entitlements = await billingModule.entitlementRepository.findByOrganizationId(organizationId)
+      return entitlements.map((entitlement) => ({ feature: entitlement.feature, active: entitlement.active }))
+    },
   })
   registerAuthRoutes(app, authController, authMiddleware)
 
@@ -45,7 +49,16 @@ export function buildServer() {
   registerDonationRoutes(app, billingModule.createDonationUseCase, billingModule.donationRoutesConfig)
 
   const shortsModule = buildShortsModule(db, {
-    requireEntitlement: (input) => billingModule.authorizeFeatureUsageUseCase.requireEntitlement(input),
+    requireEntitlement: async (input) => {
+      try {
+        await billingModule.authorizeFeatureUsageUseCase.requireEntitlement(input)
+      } catch (error) {
+        if (error instanceof BillingFeatureAccessDeniedError) {
+          throw new ShortsFeatureAccessDeniedError(input.feature)
+        }
+        throw error
+      }
+    },
   })
   registerShortsRoutes(app, shortsModule.controller, authMiddleware)
 

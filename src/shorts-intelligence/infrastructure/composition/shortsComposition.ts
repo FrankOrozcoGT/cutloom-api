@@ -2,6 +2,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import type { FeatureUsageAuthorizer } from '../../domain/ports/FeatureUsageAuthorizer'
 import type { Database } from '../../../shared/infrastructure/db/client'
+import { readEnv } from '../../../shared/infrastructure/config/readEnv'
 import { DeepSeekProvider } from '../providers/DeepSeekProvider'
 import { SenseVoiceProvider } from '../providers/SenseVoiceProvider'
 import { DrizzleUsageEventRepository } from '../repositories/DrizzleUsageEventRepository'
@@ -14,14 +15,6 @@ import { DetectShortsUseCase } from '../../application/use-cases/DetectShortsUse
 import { ScoreShortsUseCase } from '../../application/use-cases/ScoreShortsUseCase'
 import { ShortsController } from '../http/ShortsController'
 import type { UsageEventRepository } from '../../domain/ports/UsageEventRepository'
-
-function readEnv(name: string, fallback?: string): string {
-  const value = process.env[name] ?? fallback
-  if (value === undefined) {
-    throw new Error(`Missing required environment variable: ${name}`)
-  }
-  return value
-}
 
 export interface ShortsModule {
   controller: ShortsController
