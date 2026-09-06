@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import type { CreateDonationUseCase, InvalidDonationAmountError } from '../../application/use-cases/CreateDonationUseCase'
+import { InvalidDonationAmountError, type CreateDonationUseCase } from '../../application/use-cases/CreateDonationUseCase'
 
 const donationBodySchema = {
   type: 'object',
@@ -37,7 +37,7 @@ export function registerDonationRoutes(
           })
           return reply.status(200).send({ donationUrl: result.donationUrl })
         } catch (error) {
-          if ((error as InvalidDonationAmountError).name === 'InvalidDonationAmountError') {
+          if (error instanceof InvalidDonationAmountError) {
             return reply.status(400).send({ error: 'INVALID_DONATION_AMOUNT' })
           }
           throw error

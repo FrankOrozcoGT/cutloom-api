@@ -53,7 +53,8 @@ export const subscriptions = pgTable(
   },
   (table) => [
     uniqueIndex('subscriptions_organization_id_idx').on(table.organizationId),
-    index('subscriptions_recurrente_subscription_id_idx').on(table.recurrenteSubscriptionId),
+    uniqueIndex('subscriptions_recurrente_subscription_id_idx').on(table.recurrenteSubscriptionId),
+    uniqueIndex('subscriptions_recurrente_checkout_id_idx').on(table.recurrenteCheckoutId),
   ],
 )
 

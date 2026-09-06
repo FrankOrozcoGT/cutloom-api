@@ -46,6 +46,33 @@ export interface WebhookModule {
   paymentGatewayProvider: PaymentGatewayProvider
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+/** Único punto de validación de forma del webhook — de aquí en adelante el tipo se propaga sin recastear. */
+function parsePaymentEventPayload(value: unknown): RecurrentePaymentEventPayload {
+  if (!isRecord(value) || typeof value.event_type !== 'string' || typeof value.id !== 'string') {
+    throw new Error('Recurrente payment event payload missing event_type/id')
+  }
+  const checkout = value.checkout
+  if (checkout !== undefined && (!isRecord(checkout) || typeof checkout.id !== 'string')) {
+    throw new Error('Recurrente payment event payload has malformed checkout')
+  }
+  const subscription = value.subscription
+  if (subscription !== undefined && (!isRecord(subscription) || typeof subscription.id !== 'string')) {
+    throw new Error('Recurrente payment event payload has malformed subscription')
+  }
+  return value as unknown as RecurrentePaymentEventPayload
+}
+
+function parseSubscriptionEventPayload(value: unknown): RecurrenteSubscriptionEventPayload {
+  if (!isRecord(value) || typeof value.event_type !== 'string' || typeof value.id !== 'string') {
+    throw new Error('Recurrente subscription event payload missing event_type/id')
+  }
+  return value as unknown as RecurrenteSubscriptionEventPayload
+}
+
 function extractSvixHeaders(req: FastifyRequest) {
   return {
     svixId: req.headers['svix-id'] as string,
@@ -84,17 +111,17 @@ export function registerWebhookRoutes(app: FastifyInstance, module: WebhookModul
           payload.event_type === 'intent.succeeded' ||
           payload.event_type === 'setup_intent.succeeded'
         ) {
-          await handlePaymentSucceeded(payload as unknown as RecurrentePaymentEventPayload, module)
+          await handlePaymentSucceeded(parsePaymentEventPayload(payload), module)
           return reply.status(200).send({ ok: true })
         }
 
         if (payload.event_type === 'payment_intent.failed' || payload.event_type === 'intent.failed') {
-          await handlePaymentFailed(payload as unknown as RecurrentePaymentEventPayload, module)
+          await handlePaymentFailed(parsePaymentEventPayload(payload), module)
           return reply.status(200).send({ ok: true })
         }
 
         if (typeof payload.event_type === 'string' && payload.event_type.startsWith('subscription.')) {
-          await handleSubscriptionEvent(payload as unknown as RecurrenteSubscriptionEventPayload, module)
+          await handleSubscriptionEvent(parseSubscriptionEventPayload(payload), module)
           return reply.status(200).send({ ok: true })
         }
 

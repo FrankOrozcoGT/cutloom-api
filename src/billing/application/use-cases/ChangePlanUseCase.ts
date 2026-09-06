@@ -2,7 +2,6 @@ import type { EntitlementRepository } from '../../domain/ports/EntitlementReposi
 import type { PaymentGatewayProvider } from '../../domain/ports/PaymentGatewayProvider'
 import type { PlanRepository } from '../../domain/ports/PlanRepository'
 import type { SubscriptionRepository } from '../../domain/ports/SubscriptionRepository'
-import { ProrationDomainService } from '../services/ProrationDomainService'
 
 export class NoActiveSubscriptionError extends Error {
   constructor(organizationId: string) {
@@ -68,18 +67,6 @@ export class ChangePlanUseCase {
     const newPlan = await this.planRepository.findById(input.newPlanId)
     if (!currentPlan) throw new PlanNotFoundError(subscription.planId)
     if (!newPlan) throw new PlanNotFoundError(input.newPlanId)
-
-    if (subscription.currentPeriodStart && subscription.currentPeriodEnd) {
-      // Cálculo de referencia (auditoría/log) del prorrateo esperado — Recurrente
-      // aplica su propio cálculo nativo al ejecutar el cambio de items.
-      ProrationDomainService.calculate({
-        currentPeriodStart: subscription.currentPeriodStart,
-        currentPeriodEnd: subscription.currentPeriodEnd,
-        now: new Date(),
-        currentPlanAmountInCents: currentPlan.amountInCents,
-        newPlanAmountInCents: newPlan.amountInCents,
-      })
-    }
 
     const result = await this.paymentGatewayProvider.changePlan(
       subscription.recurrenteSubscriptionId,
