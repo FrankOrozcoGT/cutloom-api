@@ -2,25 +2,12 @@ import type { EntitlementRepository } from '../../domain/ports/EntitlementReposi
 import type { PaymentGatewayProvider } from '../../domain/ports/PaymentGatewayProvider'
 import type { PlanRepository } from '../../domain/ports/PlanRepository'
 import type { SubscriptionRepository } from '../../domain/ports/SubscriptionRepository'
-
-export class NoActiveSubscriptionError extends Error {
-  constructor(organizationId: string) {
-    super(`No active subscription found for organization: ${organizationId}`)
-    this.name = 'NoActiveSubscriptionError'
-  }
-}
+import { NoActiveSubscriptionError, PlanNotFoundError } from '../../domain/errors'
 
 export class SubscriptionNotEligibleForPlanChangeError extends Error {
   constructor() {
     super('Subscription must be active (not past_due or cancelled) to change plan')
     this.name = 'SubscriptionNotEligibleForPlanChangeError'
-  }
-}
-
-export class PlanNotFoundError extends Error {
-  constructor(planId: string) {
-    super(`Plan not found: ${planId}`)
-    this.name = 'PlanNotFoundError'
   }
 }
 
@@ -88,18 +75,18 @@ export class ChangePlanUseCase {
     const newFeatureNames = new Set(newPlanFeatures.map((f) => f.feature))
 
     // Features del plan viejo que el plan nuevo no incluye se desactivan.
-    for (const oldFeature of currentPlanFeatures) {
-      if (!newFeatureNames.has(oldFeature.feature)) {
-        await this.entitlementRepository.setActive(subscription.organizationId, oldFeature.feature, false)
-      }
-    }
+    const featuresToDeactivate = currentPlanFeatures
+      .map((f) => f.feature)
+      .filter((feature) => !newFeatureNames.has(feature))
+    await this.entitlementRepository.deactivateAll(subscription.organizationId, featuresToDeactivate)
 
     // Features del plan nuevo se otorgan (o re-otorgan) con su contador de uso reseteado.
     // El tope (usageLimit) ya no se copia aquí — se resuelve en vivo desde plan_features
     // en cada AuthorizeFeatureUsageUseCase.requireEntitlement.
-    for (const newFeature of newPlanFeatures) {
-      await this.entitlementRepository.grant(subscription.organizationId, newFeature.feature)
-    }
+    await this.entitlementRepository.grantAll(
+      subscription.organizationId,
+      newPlanFeatures.map((f) => f.feature),
+    )
 
     return {
       status: 'active',

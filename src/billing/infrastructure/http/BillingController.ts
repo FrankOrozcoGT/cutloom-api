@@ -1,10 +1,9 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { CreateCheckoutSessionUseCase, PlanNotFoundError } from '../../application/use-cases/CreateCheckoutSessionUseCase'
-import { CancelSubscriptionUseCase, NoActiveSubscriptionError } from '../../application/use-cases/CancelSubscriptionUseCase'
+import { NoActiveSubscriptionError, PlanNotFoundError } from '../../domain/errors'
+import type { CreateCheckoutSessionUseCase } from '../../application/use-cases/CreateCheckoutSessionUseCase'
+import type { CancelSubscriptionUseCase } from '../../application/use-cases/CancelSubscriptionUseCase'
 import {
   ChangePlanUseCase,
-  NoActiveSubscriptionError as NoActiveSubscriptionForPlanChangeError,
-  PlanNotFoundError as ChangePlanNotFoundError,
   SubscriptionNotEligibleForPlanChangeError,
 } from '../../application/use-cases/ChangePlanUseCase'
 import { TopUpCreditsUseCase, InvalidTopUpAmountError } from '../../application/use-cases/TopUpCreditsUseCase'
@@ -128,10 +127,10 @@ export class BillingController {
       })
       return reply.status(200).send(result)
     } catch (error) {
-      if (error instanceof NoActiveSubscriptionForPlanChangeError) {
+      if (error instanceof NoActiveSubscriptionError) {
         return reply.status(404).send({ error: 'NO_ACTIVE_SUBSCRIPTION' })
       }
-      if (error instanceof ChangePlanNotFoundError) {
+      if (error instanceof PlanNotFoundError) {
         return reply.status(400).send({ error: 'PLAN_NOT_FOUND' })
       }
       if (error instanceof SubscriptionNotEligibleForPlanChangeError) {

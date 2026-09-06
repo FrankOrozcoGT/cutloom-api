@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, gte, sql } from 'drizzle-orm'
 import type { Database } from '../../../shared/infrastructure/db/client'
 import { creditAccounts, creditTransactions } from '../db/schema'
 import { CreditAccount } from '../../domain/entities/CreditAccount'
@@ -84,23 +84,26 @@ export class DrizzleCreditAccountRepository implements CreditAccountRepository {
 
   async deductCredits(organizationId: string, amount: number, reason: string): Promise<CreditAccount> {
     return this.db.transaction(async (tx) => {
-      const [account] = await tx
-        .select()
-        .from(creditAccounts)
-        .where(eq(creditAccounts.organizationId, organizationId))
-        .limit(1)
-
-      if (!account || account.balance < amount) {
-        throw new InsufficientCreditsError(organizationId)
-      }
-
+      // El chequeo de saldo suficiente vive en el propio WHERE del UPDATE (atómico a nivel
+      // de fila en Postgres) en vez de un SELECT previo — un SELECT-luego-UPDATE separado
+      // deja una ventana de carrera donde dos requests concurrentes leen el mismo balance
+      // antes de que ninguno haga commit, permitiendo que ambos pasen el chequeo y dejen
+      // el balance negativo.
       const [updated] = await tx
         .update(creditAccounts)
         .set({ balance: sql`${creditAccounts.balance} - ${amount}`, updatedAt: new Date() })
-        .where(eq(creditAccounts.organizationId, organizationId))
+        .where(and(eq(creditAccounts.organizationId, organizationId), gte(creditAccounts.balance, amount)))
         .returning()
 
-      if (!updated) throw new Error(`Failed to deduct credits for ${organizationId}`)
+      if (!updated) {
+        const [account] = await tx
+          .select()
+          .from(creditAccounts)
+          .where(eq(creditAccounts.organizationId, organizationId))
+          .limit(1)
+        if (!account) throw new Error(`Credit account not found for ${organizationId}`)
+        throw new InsufficientCreditsError(organizationId)
+      }
 
       await tx.insert(creditTransactions).values({
         organizationId,

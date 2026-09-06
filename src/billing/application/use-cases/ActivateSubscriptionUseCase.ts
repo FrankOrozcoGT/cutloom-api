@@ -47,8 +47,9 @@ export class ActivateSubscriptionUseCase {
     })
 
     const planFeatures = await this.planRepository.findFeaturesByPlanId(plan.id)
-    for (const planFeature of planFeatures) {
-      await this.entitlementRepository.grant(subscription.organizationId, planFeature.feature)
-    }
+    await this.entitlementRepository.grantAll(
+      subscription.organizationId,
+      planFeatures.map((f) => f.feature),
+    )
   }
 }

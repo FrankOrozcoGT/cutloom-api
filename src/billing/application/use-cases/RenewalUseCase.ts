@@ -38,8 +38,9 @@ export class RenewalUseCase {
     await this.subscriptionRepository.extendPeriod(subscription.id, input.currentPeriodStart, input.currentPeriodEnd)
 
     const planFeatures = await this.planRepository.findFeaturesByPlanId(subscription.planId)
-    for (const planFeature of planFeatures) {
-      await this.entitlementRepository.grant(subscription.organizationId, planFeature.feature)
-    }
+    await this.entitlementRepository.grantAll(
+      subscription.organizationId,
+      planFeatures.map((f) => f.feature),
+    )
   }
 }

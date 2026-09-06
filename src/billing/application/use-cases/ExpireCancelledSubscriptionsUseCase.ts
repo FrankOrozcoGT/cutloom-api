@@ -22,9 +22,10 @@ export class ExpireCancelledSubscriptionsUseCase {
     for (const subscription of expired) {
       await this.subscriptionRepository.updateStatus(subscription.id, 'inactive')
       const planFeatures = await this.planRepository.findFeaturesByPlanId(subscription.planId)
-      for (const planFeature of planFeatures) {
-        await this.entitlementRepository.setActive(subscription.organizationId, planFeature.feature, false)
-      }
+      await this.entitlementRepository.deactivateAll(
+        subscription.organizationId,
+        planFeatures.map((f) => f.feature),
+      )
     }
   }
 }

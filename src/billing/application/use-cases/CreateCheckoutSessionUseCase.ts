@@ -1,13 +1,7 @@
 import type { PlanRepository } from '../../domain/ports/PlanRepository'
 import type { PaymentGatewayProvider } from '../../domain/ports/PaymentGatewayProvider'
 import type { SubscriptionRepository } from '../../domain/ports/SubscriptionRepository'
-
-export class PlanNotFoundError extends Error {
-  constructor(planId: string) {
-    super(`Plan not found: ${planId}`)
-    this.name = 'PlanNotFoundError'
-  }
-}
+import { PlanNotFoundError } from '../../domain/errors'
 
 export interface CreateCheckoutSessionInput {
   organizationId: string

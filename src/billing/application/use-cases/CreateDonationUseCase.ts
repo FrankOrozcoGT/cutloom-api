@@ -1,10 +1,9 @@
 import type { PaymentGatewayProvider } from '../../domain/ports/PaymentGatewayProvider'
-
-const MIN_DONATION_AMOUNT_IN_CENTS = 500 // Q5 / mínimo de Recurrente para checkouts one_time
+import { MIN_ONE_TIME_PAYMENT_AMOUNT_IN_CENTS } from '../../domain/constants'
 
 export class InvalidDonationAmountError extends Error {
   constructor() {
-    super(`Donation amount must be at least ${MIN_DONATION_AMOUNT_IN_CENTS} cents`)
+    super(`Donation amount must be at least ${MIN_ONE_TIME_PAYMENT_AMOUNT_IN_CENTS} cents`)
     this.name = 'InvalidDonationAmountError'
   }
 }
@@ -31,7 +30,7 @@ export class CreateDonationUseCase {
   constructor(private readonly paymentGatewayProvider: PaymentGatewayProvider) {}
 
   async execute(input: CreateDonationInput): Promise<CreateDonationResult> {
-    if (input.amountInCents < MIN_DONATION_AMOUNT_IN_CENTS) {
+    if (input.amountInCents < MIN_ONE_TIME_PAYMENT_AMOUNT_IN_CENTS) {
       throw new InvalidDonationAmountError()
     }
 

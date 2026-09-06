@@ -26,6 +26,10 @@ export interface EntitlementRepository {
   setActive(organizationId: string, feature: string, active: boolean): Promise<void>
   /** Activa el feature (usageCount arranca/resetea en 0 — activación, renovación o cambio de plan). */
   grant(organizationId: string, feature: string): Promise<void>
+  /** Caso bulk de grant: activa todas las features en una sola operación (activación, renovación o cambio de plan). */
+  grantAll(organizationId: string, features: string[]): Promise<void>
+  /** Caso bulk de setActive(..., false): desactiva todas las features en una sola operación. */
+  deactivateAll(organizationId: string, features: string[]): Promise<void>
   /**
    * Incrementa usageCount en 1; lanza UsageLimitExceededError si ya alcanzó currentUsageLimit.
    * currentUsageLimit se resuelve en vivo desde plan_features (no se guarda copia en

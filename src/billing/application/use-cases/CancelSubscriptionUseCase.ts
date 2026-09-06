@@ -2,13 +2,7 @@ import type { EntitlementRepository } from '../../domain/ports/EntitlementReposi
 import type { PaymentGatewayProvider } from '../../domain/ports/PaymentGatewayProvider'
 import type { PlanRepository } from '../../domain/ports/PlanRepository'
 import type { SubscriptionRepository } from '../../domain/ports/SubscriptionRepository'
-
-export class NoActiveSubscriptionError extends Error {
-  constructor(organizationId: string) {
-    super(`No active subscription found for organization: ${organizationId}`)
-    this.name = 'NoActiveSubscriptionError'
-  }
-}
+import { NoActiveSubscriptionError } from '../../domain/errors'
 
 export interface CancelSubscriptionInput {
   organizationId: string
@@ -51,9 +45,10 @@ export class CancelSubscriptionUseCase {
     if (subscription.status === 'past_due' || subscription.isPeriodExpired()) {
       await this.subscriptionRepository.updateStatus(subscription.id, 'inactive')
       const planFeatures = await this.planRepository.findFeaturesByPlanId(subscription.planId)
-      for (const planFeature of planFeatures) {
-        await this.entitlementRepository.setActive(subscription.organizationId, planFeature.feature, false)
-      }
+      await this.entitlementRepository.deactivateAll(
+        subscription.organizationId,
+        planFeatures.map((f) => f.feature),
+      )
       return { cancelAtPeriodEnd: false, currentPeriodEnd: subscription.currentPeriodEnd }
     }
 

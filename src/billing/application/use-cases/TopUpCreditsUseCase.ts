@@ -1,11 +1,10 @@
 import type { CreditAccountRepository } from '../../domain/ports/CreditAccountRepository'
 import type { PaymentGatewayProvider } from '../../domain/ports/PaymentGatewayProvider'
-
-const MIN_TOPUP_AMOUNT_IN_CENTS = 500 // Q5 / mínimo de Recurrente para checkouts one_time
+import { MIN_ONE_TIME_PAYMENT_AMOUNT_IN_CENTS } from '../../domain/constants'
 
 export class InvalidTopUpAmountError extends Error {
   constructor() {
-    super(`Top-up amount must be at least ${MIN_TOPUP_AMOUNT_IN_CENTS} cents`)
+    super(`Top-up amount must be at least ${MIN_ONE_TIME_PAYMENT_AMOUNT_IN_CENTS} cents`)
     this.name = 'InvalidTopUpAmountError'
   }
 }
@@ -35,7 +34,7 @@ export class TopUpCreditsUseCase {
   ) {}
 
   async execute(input: TopUpCreditsInput): Promise<TopUpCreditsResult> {
-    if (input.amountInCents < MIN_TOPUP_AMOUNT_IN_CENTS) {
+    if (input.amountInCents < MIN_ONE_TIME_PAYMENT_AMOUNT_IN_CENTS) {
       throw new InvalidTopUpAmountError()
     }
 

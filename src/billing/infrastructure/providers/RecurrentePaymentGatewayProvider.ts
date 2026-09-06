@@ -25,6 +25,14 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 10_0
   }
 }
 
+async function fetchOrThrow(url: string, init: RequestInit, errorContext: string): Promise<Response> {
+  const res = await fetchWithTimeout(url, init)
+  if (!res.ok) {
+    throw new Error(`${errorContext}: ${await res.text()}`)
+  }
+  return res
+}
+
 /**
  * Implementación del puerto PaymentGatewayProvider para la pasarela Recurrente
  * (docs.recurrente.com). Firma de webhook estilo Svix; checkout con price_id de
@@ -39,52 +47,49 @@ export class RecurrentePaymentGatewayProvider implements PaymentGatewayProvider 
     organizationId: string,
     urls: { successUrl: string; cancelUrl: string },
   ): Promise<CheckoutSessionResult> {
-    const res = await fetchWithTimeout(`${this.config.baseUrl}/checkouts`, {
-      method: 'POST',
-      headers: { 'X-SECRET-KEY': this.config.apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        items: [{ price_id: plan.recurrentePriceId, quantity: 1 }],
-        success_url: urls.successUrl,
-        cancel_url: urls.cancelUrl,
-        metadata: { organizationId, planId: plan.id },
-      }),
-    })
-
-    if (!res.ok) {
-      throw new Error(`Recurrente checkout creation failed: ${await res.text()}`)
-    }
+    const res = await fetchOrThrow(
+      `${this.config.baseUrl}/checkouts`,
+      {
+        method: 'POST',
+        headers: { 'X-SECRET-KEY': this.config.apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: [{ price_id: plan.recurrentePriceId, quantity: 1 }],
+          success_url: urls.successUrl,
+          cancel_url: urls.cancelUrl,
+          metadata: { organizationId, planId: plan.id },
+        }),
+      },
+      'Recurrente checkout creation failed',
+    )
 
     const data = (await res.json()) as { id: string; checkout_url: string }
     return { checkoutId: data.id, checkoutUrl: data.checkout_url }
   }
 
   async cancelSubscription(recurrenteSubscriptionId: string): Promise<void> {
-    const res = await fetchWithTimeout(`${this.config.baseUrl}/subscriptions/${recurrenteSubscriptionId}`, {
-      method: 'DELETE',
-      headers: { 'X-SECRET-KEY': this.config.apiKey },
-    })
-
-    if (!res.ok) {
-      throw new Error(`Recurrente cancel subscription failed: ${await res.text()}`)
-    }
+    await fetchOrThrow(
+      `${this.config.baseUrl}/subscriptions/${recurrenteSubscriptionId}`,
+      { method: 'DELETE', headers: { 'X-SECRET-KEY': this.config.apiKey } },
+      'Recurrente cancel subscription failed',
+    )
   }
 
   async changePlan(recurrenteSubscriptionId: string, fromPlan: Plan, toPlan: Plan): Promise<ChangePlanResult> {
-    const res = await fetchWithTimeout(`${this.config.baseUrl}/subscriptions/${recurrenteSubscriptionId}`, {
-      method: 'PUT',
-      headers: { 'X-SECRET-KEY': this.config.apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        items: [
-          { price_id: fromPlan.recurrentePriceId, deleted: true },
-          { price_id: toPlan.recurrentePriceId },
-        ],
-        mode: 'now_and_charge',
-      }),
-    })
-
-    if (!res.ok) {
-      throw new Error(`Recurrente change plan failed: ${await res.text()}`)
-    }
+    const res = await fetchOrThrow(
+      `${this.config.baseUrl}/subscriptions/${recurrenteSubscriptionId}`,
+      {
+        method: 'PUT',
+        headers: { 'X-SECRET-KEY': this.config.apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: [
+            { price_id: fromPlan.recurrentePriceId, deleted: true },
+            { price_id: toPlan.recurrentePriceId },
+          ],
+          mode: 'now_and_charge',
+        }),
+      },
+      'Recurrente change plan failed',
+    )
 
     const data = (await res.json()) as {
       current_period_start?: string
@@ -104,14 +109,11 @@ export class RecurrentePaymentGatewayProvider implements PaymentGatewayProvider 
    * (mismo patrón ya usado y probado en producción: GET /subscriptions/{id}).
    */
   async getSubscriptionDetails(recurrenteSubscriptionId: string): Promise<SubscriptionDetails> {
-    const res = await fetchWithTimeout(`${this.config.baseUrl}/subscriptions/${recurrenteSubscriptionId}`, {
-      method: 'GET',
-      headers: { 'X-SECRET-KEY': this.config.apiKey },
-    })
-
-    if (!res.ok) {
-      throw new Error(`Recurrente subscription lookup failed: ${await res.text()}`)
-    }
+    const res = await fetchOrThrow(
+      `${this.config.baseUrl}/subscriptions/${recurrenteSubscriptionId}`,
+      { method: 'GET', headers: { 'X-SECRET-KEY': this.config.apiKey } },
+      'Recurrente subscription lookup failed',
+    )
 
     const data = (await res.json()) as {
       status: string
@@ -128,14 +130,11 @@ export class RecurrentePaymentGatewayProvider implements PaymentGatewayProvider 
 
   /** Consultado desde el callback de retorno (backend) tras el redirect de Recurrente, sin depender de cookies. */
   async getCheckoutStatus(checkoutId: string): Promise<CheckoutStatus> {
-    const res = await fetchWithTimeout(`${this.config.baseUrl}/checkouts/${checkoutId}`, {
-      method: 'GET',
-      headers: { 'X-SECRET-KEY': this.config.apiKey },
-    })
-
-    if (!res.ok) {
-      throw new Error(`Recurrente checkout lookup failed: ${await res.text()}`)
-    }
+    const res = await fetchOrThrow(
+      `${this.config.baseUrl}/checkouts/${checkoutId}`,
+      { method: 'GET', headers: { 'X-SECRET-KEY': this.config.apiKey } },
+      'Recurrente checkout lookup failed',
+    )
 
     const data = (await res.json()) as { status: string }
     return { status: data.status }
@@ -149,28 +148,28 @@ export class RecurrentePaymentGatewayProvider implements PaymentGatewayProvider 
     cancelUrl: string
     metadata: Record<string, string>
   }): Promise<OneTimePaymentSessionResult> {
-    const res = await fetchWithTimeout(`${this.config.baseUrl}/checkouts`, {
-      method: 'POST',
-      headers: { 'X-SECRET-KEY': this.config.apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        items: [
-          {
-            name: input.name,
-            amount_in_cents: input.amountInCents,
-            currency: input.currency,
-            quantity: 1,
-            charge_type: 'one_time',
-          },
-        ],
-        success_url: input.successUrl,
-        cancel_url: input.cancelUrl,
-        metadata: input.metadata,
-      }),
-    })
-
-    if (!res.ok) {
-      throw new Error(`Recurrente one-time checkout creation failed: ${await res.text()}`)
-    }
+    const res = await fetchOrThrow(
+      `${this.config.baseUrl}/checkouts`,
+      {
+        method: 'POST',
+        headers: { 'X-SECRET-KEY': this.config.apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: [
+            {
+              name: input.name,
+              amount_in_cents: input.amountInCents,
+              currency: input.currency,
+              quantity: 1,
+              charge_type: 'one_time',
+            },
+          ],
+          success_url: input.successUrl,
+          cancel_url: input.cancelUrl,
+          metadata: input.metadata,
+        }),
+      },
+      'Recurrente one-time checkout creation failed',
+    )
 
     const data = (await res.json()) as { id: string; checkout_url: string }
     return { checkoutId: data.id, checkoutUrl: data.checkout_url }
