@@ -35,6 +35,8 @@
     "bcrypt": "^6.0.0",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.11.3",
+    "gaxios": "^8.0.0",
+    "googleapis": "^180.0.0",
     "jose": "^6.2.8",
     "postgres": "^3.4.9",
     "sherpa-onnx-node": "^1.13.6"

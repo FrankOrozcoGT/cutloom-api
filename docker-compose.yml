@@ -8,6 +8,14 @@ services:
       - "3005:3000"
     networks:
       - f_chat_fchat_network
+    # Sin esto, el driver json-file de Docker por defecto no rota ni limita tamaño — los logs
+    # de la app (a stdout vía pino) crecerían indefinidamente en disco. 10MB x 5 archivos = 50MB
+    # tope total, con los logs más recientes siempre disponibles.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
 
 networks:
   f_chat_fchat_network:
