@@ -17,13 +17,18 @@ import { AuthController } from '../http/AuthController'
 import { createAuthMiddleware } from '../http/authMiddleware'
 import type { IdentityProvider } from '../../domain/ports/IdentityProvider'
 import type { EntitlementsReader } from '../../domain/ports/EntitlementsReader'
+import type { YouTubeConnectionReader } from '../../domain/ports/YouTubeConnectionReader'
 
 export interface AuthModule {
   controller: AuthController
   authMiddleware: ReturnType<typeof createAuthMiddleware>
 }
 
-export function buildAuthModule(db: Database, entitlementsReader: EntitlementsReader): AuthModule {
+export function buildAuthModule(
+  db: Database,
+  entitlementsReader: EntitlementsReader,
+  youTubeConnectionReader: YouTubeConnectionReader,
+): AuthModule {
   const userRepository = new DrizzleUserRepository(db)
   const organizationRepository = new DrizzleOrganizationRepository(db)
   const membershipRepository = new DrizzleMembershipRepository(db)
@@ -68,6 +73,7 @@ export function buildAuthModule(db: Database, entitlementsReader: EntitlementsRe
     googleProvider,
     readEnv('FRONTEND_URL', 'http://localhost:5173'),
     entitlementsReader,
+    youTubeConnectionReader,
   )
   const authMiddleware = createAuthMiddleware(tokenService, tokenBlacklistRepository, userRepository)
 

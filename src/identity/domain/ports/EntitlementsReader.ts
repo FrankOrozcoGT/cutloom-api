@@ -1,6 +1,7 @@
 export interface EntitlementSummary {
   feature: string
-  active: boolean
+  /** Siempre true — la lista ya solo contiene features activas ahora mismo (derivadas en vivo de la suscripción del tenant), no existe un estado "inactivo" que listar. Se mantiene por compatibilidad de contrato con el frontend. */
+  active: true
 }
 
 /**

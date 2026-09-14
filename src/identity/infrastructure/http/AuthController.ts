@@ -13,6 +13,13 @@ import { WeakPasswordError } from '../../domain/value-objects/Password'
 import { InvalidTokenError } from '../../domain/ports/TokenService'
 import type { User } from '../../domain/entities/User'
 import type { EntitlementsReader } from '../../domain/ports/EntitlementsReader'
+import type { YouTubeConnectionReader } from '../../domain/ports/YouTubeConnectionReader'
+import { isSafeReturnTo, buildOAuthCallbackUrl } from '../../../shared/infrastructure/http/oauthCallbackRedirect'
+
+export interface EmailPasswordBody {
+  email: string
+  password: string
+}
 
 const REFRESH_TOKEN_COOKIE = 'refreshToken'
 const REFRESH_TOKEN_COOKIE_PATH = '/api/auth/refresh'
@@ -43,11 +50,6 @@ function serializeUser(user: User) {
   return user.toJSON()
 }
 
-/** Solo se acepta un path relativo propio del frontend — nunca una URL absoluta (evita open redirect). */
-function isSafeReturnTo(returnTo: string): boolean {
-  return returnTo.startsWith('/') && !returnTo.startsWith('//')
-}
-
 export class AuthController {
   constructor(
     private readonly authenticateUserUseCase: AuthenticateUserUseCase,
@@ -56,24 +58,25 @@ export class AuthController {
     private readonly googleProvider: GoogleIdentityProvider,
     private readonly frontendUrl: string,
     private readonly entitlementsReader: EntitlementsReader,
+    private readonly youTubeConnectionReader: YouTubeConnectionReader,
   ) {}
 
-  async register(req: FastifyRequest, reply: FastifyReply) {
+  async register(req: FastifyRequest<{ Body: EmailPasswordBody }>, reply: FastifyReply) {
     return this.authenticateLocal(req, reply, 'register', 201)
   }
 
-  async login(req: FastifyRequest, reply: FastifyReply) {
+  async login(req: FastifyRequest<{ Body: EmailPasswordBody }>, reply: FastifyReply) {
     return this.authenticateLocal(req, reply, 'login', 200)
   }
 
   private async authenticateLocal(
-    req: FastifyRequest,
+    req: FastifyRequest<{ Body: EmailPasswordBody }>,
     reply: FastifyReply,
     intent: 'register' | 'login',
     successStatus: number,
   ) {
     try {
-      const { email, password } = req.body as { email: string; password: string }
+      const { email, password } = req.body
       const result = await this.authenticateUserUseCase.execute({
         provider: 'local',
         intent,
@@ -148,14 +151,7 @@ export class AuthController {
   }
 
   private buildCallbackUrl(params: Record<string, string>, returnTo: string | undefined): string {
-    const url = new URL(`${this.frontendUrl}/auth/callback`)
-    for (const [key, value] of Object.entries(params)) {
-      url.searchParams.set(key, value)
-    }
-    if (returnTo && isSafeReturnTo(returnTo)) {
-      url.searchParams.set('returnTo', returnTo)
-    }
-    return url.toString()
+    return buildOAuthCallbackUrl(this.frontendUrl, '/auth/callback', params, returnTo)
   }
 
   private redirectWithError(reply: FastifyReply, error: string, returnTo?: string) {
@@ -178,14 +174,16 @@ export class AuthController {
       return reply.status(401).send({ error: 'MISSING_ACCESS_TOKEN' })
     }
 
-    const entitlements = req.organizationId
-      ? await this.entitlementsReader.findByOrganizationId(req.organizationId)
-      : []
+    const [entitlements, youtubeConnected] = await Promise.all([
+      req.organizationId ? this.entitlementsReader.findByOrganizationId(req.organizationId) : Promise.resolve([]),
+      req.organizationId ? this.youTubeConnectionReader.isConnected(req.organizationId) : Promise.resolve(false),
+    ])
 
     return reply.status(200).send({
       user: serializeUser(req.user),
       organizationId: req.organizationId ?? null,
       entitlements,
+      youtubeConnected,
     })
   }
 
