@@ -13,6 +13,10 @@ import { FeatureAccessDeniedError as BillingFeatureAccessDeniedError } from '../
 import { buildShortsModule } from '../../../shorts-intelligence/infrastructure/composition/shortsComposition'
 import { registerShortsRoutes } from '../../../shorts-intelligence/infrastructure/http/shortsRoutes'
 import { FeatureAccessDeniedError as ShortsFeatureAccessDeniedError } from '../../../shorts-intelligence/domain/ports/FeatureUsageAuthorizer'
+import { buildPublishingModule } from '../../../publishing/infrastructure/composition/publishingComposition'
+import { registerPublishingRoutes } from '../../../publishing/infrastructure/http/publishingRoutes'
+import { FeatureAccessDeniedError as PublishingFeatureAccessDeniedError } from '../../../publishing/domain/ports/PublishingFeatureAuthorizer'
+import { DrizzleYouTubeOAuthTokenRepository } from '../../../publishing/infrastructure/repositories/DrizzleYouTubeOAuthTokenRepository'
 
 function corsOrigins(): string[] {
   const raw = process.env.CORS_ORIGINS
@@ -22,12 +26,40 @@ function corsOrigins(): string[] {
   return raw.split(',').map((origin) => origin.trim())
 }
 
+type RequireEntitlement = (input: { organizationId: string; feature: string }) => Promise<void>
+
+/** Traduce el `FeatureAccessDeniedError` genérico de billing al error de dominio propio del
+ * bounded context llamador, para que cada contexto solo conozca sus propias clases de error. */
+function adaptRequireEntitlement<E extends Error>(
+  requireEntitlement: RequireEntitlement,
+  ErrorClass: new (feature: string) => E,
+): RequireEntitlement {
+  return async (input) => {
+    try {
+      await requireEntitlement(input)
+    } catch (error) {
+      if (error instanceof BillingFeatureAccessDeniedError) {
+        throw new ErrorClass(input.feature)
+      }
+      throw error
+    }
+  }
+}
+
 export function buildServer() {
-  const app = Fastify({ logger: true })
+  // 'info' (default de Fastify) loguea cada request completa — volumen alto en producción,
+  // sumado a que hoy no hay agregador de logs externo (solo stdout + rotación de Docker, ver
+  // docker-compose.yml), así que se reduce a 'warn' fuera de dev para no saturar el disco.
+  const logLevel = process.env.NODE_ENV === 'production' ? 'warn' : 'info'
+  const app = Fastify({ logger: { level: logLevel } })
 
   app.register(cors, {
     origin: corsOrigins(),
     credentials: true,
+    // El frontend necesita leer el header Location del redirect 302 de /youtube/auth/start
+    // (ej. para abrirlo en popup en vez de dejar que el navegador redirija solo) — sin esto,
+    // @fastify/cors no expone headers custom por default en una respuesta cross-origin.
+    exposedHeaders: ['Location'],
   })
   app.register(cookie)
   // Límites alineados con ScoreShortsUseCase (MAX_CLIPS=30, MAX_CLIP_SECONDS=180 — un WAV
@@ -35,38 +67,65 @@ export function buildServer() {
   app.register(multipart, { limits: { fileSize: 10 * 1024 * 1024, files: 30 } })
 
   const billingModule = buildBillingModule(db)
+  const youTubeOAuthTokenRepository = new DrizzleYouTubeOAuthTokenRepository(db)
 
-  const { controller: authController, authMiddleware } = buildAuthModule(db, {
-    findByOrganizationId: async (organizationId) => {
-      const entitlements = await billingModule.entitlementRepository.findByOrganizationId(organizationId)
-      return entitlements.map((entitlement) => ({ feature: entitlement.feature, active: entitlement.active }))
+  const { controller: authController, authMiddleware } = buildAuthModule(
+    db,
+    {
+      findByOrganizationId: async (organizationId) => {
+        const features = await billingModule.entitlementRepository.findActiveFeaturesByOrganizationId(organizationId)
+        return features.map(({ feature }) => ({ feature, active: true as const }))
+      },
     },
-  })
+    {
+      isConnected: async (organizationId) => {
+        const token = await youTubeOAuthTokenRepository.findByOrganizationId(organizationId)
+        return token !== null
+      },
+    },
+  )
   registerAuthRoutes(app, authController, authMiddleware)
 
   registerBillingRoutes(app, billingModule.controller, authMiddleware)
   registerWebhookRoutes(app, billingModule.webhookModule)
   registerDonationRoutes(app, billingModule.createDonationUseCase, billingModule.donationRoutesConfig)
 
-  const shortsModule = buildShortsModule(db, {
-    requireEntitlement: async (input) => {
-      try {
-        await billingModule.authorizeFeatureUsageUseCase.requireEntitlement(input)
-      } catch (error) {
-        if (error instanceof BillingFeatureAccessDeniedError) {
-          throw new ShortsFeatureAccessDeniedError(input.feature)
-        }
-        throw error
-      }
+  const shortsModule = buildShortsModule(
+    db,
+    {
+      requireEntitlement: adaptRequireEntitlement(
+        billingModule.authorizeFeatureUsageUseCase.requireEntitlement.bind(billingModule.authorizeFeatureUsageUseCase),
+        ShortsFeatureAccessDeniedError,
+      ),
     },
-  })
+    app.log,
+  )
   registerShortsRoutes(app, shortsModule.controller, authMiddleware)
+
+  const publishingModule = buildPublishingModule(
+    db,
+    {
+      requireEntitlement: adaptRequireEntitlement(
+        billingModule.authorizeFeatureUsageUseCase.requireEntitlement.bind(billingModule.authorizeFeatureUsageUseCase),
+        PublishingFeatureAccessDeniedError,
+      ),
+    },
+    app.log,
+    youTubeOAuthTokenRepository,
+  )
+  registerPublishingRoutes(app, publishingModule.controller, authMiddleware)
 
   app.get('/health', () => ({ status: 'ok' }))
 
   Bun.cron('0 * * * *', () => {
     billingModule.expireCancelledSubscriptionsUseCase.execute().catch((error: unknown) => {
       app.log.error({ error }, 'expireCancelledSubscriptionsUseCase failed')
+    })
+  })
+
+  Bun.cron('0 * * * *', () => {
+    publishingModule.expireStaleUploadingUseCase.execute().catch((error: unknown) => {
+      app.log.error({ error }, 'expireStaleUploadingUseCase failed')
     })
   })
 
