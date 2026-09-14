@@ -51,6 +51,8 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          YOUTUBE_ENCRYPTION_KEY: ${{ secrets.YOUTUBE_ENCRYPTION_KEY }}
         run: |
           cat <<EOF > /tmp/env.production
           PORT=3000
@@ -64,6 +66,11 @@ jobs:
           GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
           GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
           GOOGLE_REDIRECT_URI=https://api-cutloom.fcoder.uk/api/auth/google/callback
+          DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+          DEEPSEEK_API_BASE_URL=https://api.deepseek.com
+          DEEPSEEK_MODEL=deepseek-v4-flash
+          YOUTUBE_OAUTH_REDIRECT_URI=https://api-cutloom.fcoder.uk/api/publishing/youtube/auth/callback
+          YOUTUBE_ENCRYPTION_KEY=${YOUTUBE_ENCRYPTION_KEY}
           EOF
 
           mkdir -p ~/.ssh
