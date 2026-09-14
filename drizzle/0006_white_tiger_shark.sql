@@ -1,0 +1,1 @@
+ALTER TABLE "usage_events" ALTER COLUMN "metadata" DROP DEFAULT;

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import type { AuthController } from './AuthController'
+import type { AuthController, EmailPasswordBody } from './AuthController'
 import type { createAuthMiddleware } from './authMiddleware'
 
 const emailPasswordBodySchema = {
@@ -18,11 +18,11 @@ export function registerAuthRoutes(
 ) {
   app.register(
     (authApp, _opts, done) => {
-      authApp.post('/register', { schema: { body: emailPasswordBodySchema } }, (req, reply) =>
+      authApp.post<{ Body: EmailPasswordBody }>('/register', { schema: { body: emailPasswordBodySchema } }, (req, reply) =>
         controller.register(req, reply),
       )
 
-      authApp.post('/login', { schema: { body: emailPasswordBodySchema } }, (req, reply) =>
+      authApp.post<{ Body: EmailPasswordBody }>('/login', { schema: { body: emailPasswordBodySchema } }, (req, reply) =>
         controller.login(req, reply),
       )
 

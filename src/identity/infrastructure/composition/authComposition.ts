@@ -1,4 +1,5 @@
 import type { Database } from '../../../shared/infrastructure/db/client'
+import { readEnv } from '../../../shared/infrastructure/config/readEnv'
 import { DrizzleUserRepository } from '../repositories/DrizzleUserRepository'
 import { DrizzleOrganizationRepository } from '../repositories/DrizzleOrganizationRepository'
 import { DrizzleMembershipRepository } from '../repositories/DrizzleMembershipRepository'
@@ -15,21 +16,19 @@ import { RefreshTokenUseCase } from '../../application/use-cases/RefreshTokenUse
 import { AuthController } from '../http/AuthController'
 import { createAuthMiddleware } from '../http/authMiddleware'
 import type { IdentityProvider } from '../../domain/ports/IdentityProvider'
-
-function readEnv(name: string, fallback?: string): string {
-  const value = process.env[name] ?? fallback
-  if (value === undefined) {
-    throw new Error(`Missing required environment variable: ${name}`)
-  }
-  return value
-}
+import type { EntitlementsReader } from '../../domain/ports/EntitlementsReader'
+import type { YouTubeConnectionReader } from '../../domain/ports/YouTubeConnectionReader'
 
 export interface AuthModule {
   controller: AuthController
   authMiddleware: ReturnType<typeof createAuthMiddleware>
 }
 
-export function buildAuthModule(db: Database): AuthModule {
+export function buildAuthModule(
+  db: Database,
+  entitlementsReader: EntitlementsReader,
+  youTubeConnectionReader: YouTubeConnectionReader,
+): AuthModule {
   const userRepository = new DrizzleUserRepository(db)
   const organizationRepository = new DrizzleOrganizationRepository(db)
   const membershipRepository = new DrizzleMembershipRepository(db)
@@ -39,15 +38,15 @@ export function buildAuthModule(db: Database): AuthModule {
   const passwordHasher = new BcryptPasswordHasher()
   const tokenService = new JwtTokenService({
     secret: readEnv('JWT_SECRET', process.env.NODE_ENV === 'production' ? undefined : 'dev-only-secret-change-me-32-chars'),
-    accessTokenExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
-    refreshTokenExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '30d',
+    accessTokenExpiresIn: readEnv('JWT_ACCESS_EXPIRES_IN', '15m'),
+    refreshTokenExpiresIn: readEnv('JWT_REFRESH_EXPIRES_IN', '30d'),
   })
 
   const authDomainService = new AuthDomainService(organizationRepository, userRepository, membershipRepository)
 
   const googleProvider = new GoogleIdentityProvider({
-    clientId: process.env.GOOGLE_CLIENT_ID ?? '',
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+    clientId: readEnv('GOOGLE_CLIENT_ID', process.env.NODE_ENV === 'production' ? undefined : 'dev-placeholder'),
+    clientSecret: readEnv('GOOGLE_CLIENT_SECRET', process.env.NODE_ENV === 'production' ? undefined : 'dev-placeholder'),
     redirectUri: readEnv('GOOGLE_REDIRECT_URI', 'http://localhost:3000/api/auth/google/callback'),
   })
 
@@ -73,6 +72,8 @@ export function buildAuthModule(db: Database): AuthModule {
     refreshTokenUseCase,
     googleProvider,
     readEnv('FRONTEND_URL', 'http://localhost:5173'),
+    entitlementsReader,
+    youTubeConnectionReader,
   )
   const authMiddleware = createAuthMiddleware(tokenService, tokenBlacklistRepository, userRepository)
 

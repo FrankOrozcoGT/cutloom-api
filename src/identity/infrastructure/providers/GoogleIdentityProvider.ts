@@ -1,7 +1,12 @@
 import type { GoogleCredentials, IdentityProvider, NormalizedIdentity } from '../../domain/ports/IdentityProvider'
+import {
+  exchangeCodeForGoogleTokens,
+  GoogleTokenEndpointError,
+  type GoogleTokens,
+} from '../../../shared/infrastructure/providers/GoogleTokenEndpoint'
+import { isRecord } from '../../../shared/domain/validation'
 
 const AUTHORIZATION_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth'
-const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
 const USERINFO_ENDPOINT = 'https://www.googleapis.com/oauth2/v2/userinfo'
 const SCOPES = ['openid', 'email', 'profile']
 
@@ -12,18 +17,30 @@ export class GoogleAuthError extends Error {
   }
 }
 
-interface GoogleTokenResponse {
-  access_token: string
-  refresh_token?: string
-  expires_in: number
-  id_token: string
-}
-
 interface GoogleUserInfo {
   id: string
   email: string
   verified_email: boolean
   name?: string
+}
+
+/** Único punto de validación de forma para la respuesta del userinfo endpoint de Google — de aquí en adelante el tipo se propaga sin recastear. */
+function parseGoogleUserInfo(value: unknown): GoogleUserInfo {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== 'string' ||
+    typeof value.email !== 'string' ||
+    typeof value.verified_email !== 'boolean' ||
+    (value.name !== undefined && typeof value.name !== 'string')
+  ) {
+    throw new GoogleAuthError('Google userinfo response does not match the expected shape')
+  }
+  return {
+    id: value.id,
+    email: value.email,
+    verified_email: value.verified_email,
+    name: value.name,
+  }
 }
 
 export interface GoogleIdentityProviderOptions {
@@ -59,7 +76,7 @@ export class GoogleIdentityProvider implements IdentityProvider {
 
   async validate(credentials: GoogleCredentials): Promise<NormalizedIdentity> {
     const tokens = await this.exchangeCodeForTokens(credentials.code)
-    const profile = await this.fetchUserInfo(tokens.access_token)
+    const profile = await this.fetchUserInfo(tokens.accessToken)
 
     if (!profile.verified_email) {
       throw new GoogleAuthError('Google account email is not verified')
@@ -71,42 +88,43 @@ export class GoogleIdentityProvider implements IdentityProvider {
       oauth: {
         provider: 'google',
         providerAccountId: profile.id,
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token ?? null,
-        expiresAt: new Date(Date.now() + tokens.expires_in * 1000),
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
       },
     }
   }
 
-  private async exchangeCodeForTokens(code: string): Promise<GoogleTokenResponse> {
-    const response = await fetch(TOKEN_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
+  private async exchangeCodeForTokens(code: string): Promise<GoogleTokens> {
+    try {
+      return await exchangeCodeForGoogleTokens({
         code,
-        client_id: this.options.clientId,
-        client_secret: this.options.clientSecret,
-        redirect_uri: this.options.redirectUri,
-        grant_type: 'authorization_code',
-      }),
-    })
-
-    if (!response.ok) {
-      throw new GoogleAuthError('Failed to exchange authorization code with Google')
+        clientId: this.options.clientId,
+        clientSecret: this.options.clientSecret,
+        redirectUri: this.options.redirectUri,
+      })
+    } catch (error) {
+      if (error instanceof GoogleTokenEndpointError) {
+        throw new GoogleAuthError(error.message)
+      }
+      throw error
     }
-
-    return (await response.json()) as GoogleTokenResponse
   }
 
   private async fetchUserInfo(accessToken: string): Promise<GoogleUserInfo> {
-    const response = await fetch(USERINFO_ENDPOINT, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    })
+    let response: Response
+    try {
+      response = await fetch(USERINFO_ENDPOINT, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      })
+    } catch {
+      throw new GoogleAuthError('Network error while fetching Google user info')
+    }
 
     if (!response.ok) {
       throw new GoogleAuthError('Failed to fetch Google user info')
     }
 
-    return (await response.json()) as GoogleUserInfo
+    return parseGoogleUserInfo(await response.json())
   }
 }
