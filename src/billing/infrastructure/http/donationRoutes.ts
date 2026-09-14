@@ -10,6 +10,11 @@ const donationBodySchema = {
   },
 } as const
 
+interface DonationBody {
+  amountInCents: number
+  currency?: string
+}
+
 export interface DonationRoutesConfig {
   successUrl: string
   cancelUrl: string
@@ -24,8 +29,8 @@ export function registerDonationRoutes(
 ) {
   app.register(
     (donationApp, _opts, done) => {
-      donationApp.post('/coffee', { schema: { body: donationBodySchema } }, async (req, reply) => {
-        const { amountInCents, currency } = req.body as { amountInCents: number; currency?: string }
+      donationApp.post<{ Body: DonationBody }>('/coffee', { schema: { body: donationBodySchema } }, async (req, reply) => {
+        const { amountInCents, currency } = req.body
 
         try {
           const result = await createDonationUseCase.execute({

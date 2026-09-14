@@ -68,22 +68,12 @@ export class ChangePlanUseCase {
       result.currentPeriodEnd,
     )
 
-    const [currentPlanFeatures, newPlanFeatures] = await Promise.all([
-      this.planRepository.findFeaturesByPlanId(currentPlan.id),
-      this.planRepository.findFeaturesByPlanId(newPlan.id),
-    ])
-    const newFeatureNames = new Set(newPlanFeatures.map((f) => f.feature))
-
-    // Features del plan viejo que el plan nuevo no incluye se desactivan.
-    const featuresToDeactivate = currentPlanFeatures
-      .map((f) => f.feature)
-      .filter((feature) => !newFeatureNames.has(feature))
-    await this.entitlementRepository.deactivateAll(subscription.organizationId, featuresToDeactivate)
-
-    // Features del plan nuevo se otorgan (o re-otorgan) con su contador de uso reseteado.
-    // El tope (usageLimit) ya no se copia aquí — se resuelve en vivo desde plan_features
-    // en cada AuthorizeFeatureUsageUseCase.requireEntitlement.
-    await this.entitlementRepository.grantAll(
+    // El acceso en sí se deriva en vivo de subscription.planId (ya actualizado arriba) +
+    // plan_features (ver AuthorizeFeatureUsageUseCase) — no hace falta otorgar ni desactivar
+    // nada acá. Solo se reinicia el consumo de las features del plan nuevo, para que el
+    // cambio de plan no herede contador de uso acumulado bajo un tope distinto.
+    const newPlanFeatures = await this.planRepository.findFeaturesByPlanId(newPlan.id)
+    await this.entitlementRepository.resetUsageForFeatures(
       subscription.organizationId,
       newPlanFeatures.map((f) => f.feature),
     )

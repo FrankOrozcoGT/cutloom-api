@@ -1,5 +1,3 @@
-import type { EntitlementRepository } from '../../domain/ports/EntitlementRepository'
-import type { PlanRepository } from '../../domain/ports/PlanRepository'
 import type { SubscriptionRepository } from '../../domain/ports/SubscriptionRepository'
 
 const GRACE_PERIOD_DAYS = 3
@@ -20,11 +18,7 @@ export interface DeactivateInput {
  * y el estado terminal siempre lo determina el webhook subscription.cancel de Recurrente.
  */
 export class PaymentFailureUseCase {
-  constructor(
-    private readonly subscriptionRepository: SubscriptionRepository,
-    private readonly entitlementRepository: EntitlementRepository,
-    private readonly planRepository: PlanRepository,
-  ) {}
+  constructor(private readonly subscriptionRepository: SubscriptionRepository) {}
 
   async markPastDue(input: MarkPastDueInput): Promise<void> {
     const subscription = await this.subscriptionRepository.findByRecurrenteSubscriptionId(
@@ -58,12 +52,8 @@ export class PaymentFailureUseCase {
       return
     }
 
+    // El acceso se deriva en vivo de subscription.status (ver AuthorizeFeatureUsageUseCase)
+    // — poner la suscripción en 'inactive' ya revoca todas sus features, sin tocar entitlements.
     await this.subscriptionRepository.updateStatus(subscription.id, 'inactive')
-
-    const planFeatures = await this.planRepository.findFeaturesByPlanId(subscription.planId)
-    await this.entitlementRepository.deactivateAll(
-      subscription.organizationId,
-      planFeatures.map((f) => f.feature),
-    )
   }
 }

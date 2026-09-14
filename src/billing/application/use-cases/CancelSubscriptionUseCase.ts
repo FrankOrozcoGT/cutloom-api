@@ -1,6 +1,4 @@
-import type { EntitlementRepository } from '../../domain/ports/EntitlementRepository'
 import type { PaymentGatewayProvider } from '../../domain/ports/PaymentGatewayProvider'
-import type { PlanRepository } from '../../domain/ports/PlanRepository'
 import type { SubscriptionRepository } from '../../domain/ports/SubscriptionRepository'
 import { NoActiveSubscriptionError } from '../../domain/errors'
 
@@ -25,8 +23,6 @@ export interface CancelSubscriptionResult {
 export class CancelSubscriptionUseCase {
   constructor(
     private readonly subscriptionRepository: SubscriptionRepository,
-    private readonly entitlementRepository: EntitlementRepository,
-    private readonly planRepository: PlanRepository,
     private readonly paymentGatewayProvider: PaymentGatewayProvider,
   ) {}
 
@@ -43,12 +39,8 @@ export class CancelSubscriptionUseCase {
     await this.paymentGatewayProvider.cancelSubscription(subscription.recurrenteSubscriptionId)
 
     if (subscription.status === 'past_due' || subscription.isPeriodExpired()) {
+      // El acceso se deriva en vivo de subscription.status — no hace falta tocar entitlements.
       await this.subscriptionRepository.updateStatus(subscription.id, 'inactive')
-      const planFeatures = await this.planRepository.findFeaturesByPlanId(subscription.planId)
-      await this.entitlementRepository.deactivateAll(
-        subscription.organizationId,
-        planFeatures.map((f) => f.feature),
-      )
       return { cancelAtPeriodEnd: false, currentPeriodEnd: subscription.currentPeriodEnd }
     }
 

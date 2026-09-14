@@ -1,4 +1,4 @@
-import { and, eq, lt } from 'drizzle-orm'
+import { and, eq, inArray, lt } from 'drizzle-orm'
 import type { Database } from '../../../shared/infrastructure/db/client'
 import { subscriptions } from '../db/schema'
 import { Subscription } from '../../domain/entities/Subscription'
@@ -85,7 +85,12 @@ export class DrizzleSubscriptionRepository implements SubscriptionRepository {
   }
 
   async updateStatus(id: string, status: Subscription['status']): Promise<void> {
-    await this.db.update(subscriptions).set({ status, updatedAt: new Date() }).where(eq(subscriptions.id, id))
+    return this.updateStatusForIds([id], status)
+  }
+
+  async updateStatusForIds(ids: string[], status: Subscription['status']): Promise<void> {
+    if (ids.length === 0) return
+    await this.db.update(subscriptions).set({ status, updatedAt: new Date() }).where(inArray(subscriptions.id, ids))
   }
 
   async extendPeriod(id: string, currentPeriodStart: Date, currentPeriodEnd: Date): Promise<void> {

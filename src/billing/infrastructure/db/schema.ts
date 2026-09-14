@@ -58,6 +58,12 @@ export const subscriptions = pgTable(
   ],
 )
 
+// Registro de consumo por (organización, feature, ciclo de facturación actual) — no decide
+// acceso por sí solo. "¿Esta organización tiene esta feature?" y "¿cuál es su tope?" se
+// resuelven siempre en vivo desde subscriptions (¿activa?) + plan_features (¿el plan actual
+// la incluye? ¿qué usageLimit?), nunca desde una copia otorgada aquí — evita que editar el
+// catálogo de un plan ya existente deje a las organizaciones suscritas con datos
+// desincronizados (grant/deactivate manual por evento de billing, sin fuente de verdad única).
 export const entitlements = pgTable(
   'entitlements',
   {
@@ -66,12 +72,6 @@ export const entitlements = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: 'cascade' }),
     feature: text('feature').notNull(),
-    active: boolean('active').notNull().default(false),
-    // El tope de uso (usageLimit) NO se copia aquí — se resuelve en vivo desde
-    // plan_features.usage_limit en cada AuthorizeFeatureUsageUseCase.requireEntitlement,
-    // así un cambio de tope aplica de inmediato a organizaciones ya suscritas sin esperar
-    // renovación. usageCount sí vive aquí porque es consumo real por ciclo de facturación
-    // (se resetea en activación/renovación/cambio de plan, ver Activate/Renewal/ChangePlanUseCase).
     usageCount: integer('usage_count').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

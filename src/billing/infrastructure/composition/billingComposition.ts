@@ -69,18 +69,9 @@ export function buildBillingModule(db: Database): BillingModule {
     planRepository,
   )
   const renewalUseCase = new RenewalUseCase(subscriptionRepository, entitlementRepository, planRepository)
-  const paymentFailureUseCase = new PaymentFailureUseCase(subscriptionRepository, entitlementRepository, planRepository)
-  const cancelSubscriptionUseCase = new CancelSubscriptionUseCase(
-    subscriptionRepository,
-    entitlementRepository,
-    planRepository,
-    paymentGatewayProvider,
-  )
-  const expireCancelledSubscriptionsUseCase = new ExpireCancelledSubscriptionsUseCase(
-    subscriptionRepository,
-    entitlementRepository,
-    planRepository,
-  )
+  const paymentFailureUseCase = new PaymentFailureUseCase(subscriptionRepository)
+  const cancelSubscriptionUseCase = new CancelSubscriptionUseCase(subscriptionRepository, paymentGatewayProvider)
+  const expireCancelledSubscriptionsUseCase = new ExpireCancelledSubscriptionsUseCase(subscriptionRepository)
   const changePlanUseCase = new ChangePlanUseCase(
     subscriptionRepository,
     entitlementRepository,

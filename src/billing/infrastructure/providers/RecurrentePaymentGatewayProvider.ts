@@ -8,6 +8,7 @@ import type {
   SubscriptionDetails,
   WebhookHeaders,
 } from '../../domain/ports/PaymentGatewayProvider'
+import { isRecord } from '../../../shared/domain/validation'
 
 export interface RecurrenteConfig {
   apiKey: string
@@ -31,6 +32,73 @@ async function fetchOrThrow(url: string, init: RequestInit, errorContext: string
     throw new Error(`${errorContext}: ${await res.text()}`)
   }
   return res
+}
+
+interface CheckoutSessionResponse {
+  id: string
+  checkout_url: string
+}
+
+/** Único punto de validación de forma de la respuesta de checkout de Recurrente — de aquí en adelante el tipo se propaga sin recastear. */
+function parseCheckoutSessionResponse(value: unknown): CheckoutSessionResponse {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.checkout_url !== 'string') {
+    throw new Error('Recurrente checkout response missing id/checkout_url')
+  }
+  return { id: value.id, checkout_url: value.checkout_url }
+}
+
+interface ChangePlanResponse {
+  current_period_start?: string
+  current_period_end: string
+  proration_charge?: { amount_in_cents?: number }
+}
+
+/** Único punto de validación de forma de la respuesta de cambio de plan de Recurrente. */
+function parseChangePlanResponse(value: unknown): ChangePlanResponse {
+  if (!isRecord(value) || typeof value.current_period_end !== 'string') {
+    throw new Error('Recurrente change plan response missing current_period_end')
+  }
+  const prorationCharge = value.proration_charge
+  if (prorationCharge !== undefined && !isRecord(prorationCharge)) {
+    throw new Error('Recurrente change plan response has malformed proration_charge')
+  }
+  return {
+    current_period_start: typeof value.current_period_start === 'string' ? value.current_period_start : undefined,
+    current_period_end: value.current_period_end,
+    proration_charge: prorationCharge
+      ? { amount_in_cents: typeof prorationCharge.amount_in_cents === 'number' ? prorationCharge.amount_in_cents : undefined }
+      : undefined,
+  }
+}
+
+interface SubscriptionLookupResponse {
+  status: string
+  current_period_start?: string | null
+  current_period_end?: string | null
+}
+
+/** Único punto de validación de forma de la respuesta de consulta de suscripción de Recurrente. */
+function parseSubscriptionLookupResponse(value: unknown): SubscriptionLookupResponse {
+  if (!isRecord(value) || typeof value.status !== 'string') {
+    throw new Error('Recurrente subscription lookup response missing status')
+  }
+  return {
+    status: value.status,
+    current_period_start: typeof value.current_period_start === 'string' ? value.current_period_start : null,
+    current_period_end: typeof value.current_period_end === 'string' ? value.current_period_end : null,
+  }
+}
+
+interface CheckoutStatusResponse {
+  status: string
+}
+
+/** Único punto de validación de forma de la respuesta de consulta de checkout de Recurrente. */
+function parseCheckoutStatusResponse(value: unknown): CheckoutStatusResponse {
+  if (!isRecord(value) || typeof value.status !== 'string') {
+    throw new Error('Recurrente checkout status response missing status')
+  }
+  return { status: value.status }
 }
 
 /**
@@ -62,7 +130,7 @@ export class RecurrentePaymentGatewayProvider implements PaymentGatewayProvider 
       'Recurrente checkout creation failed',
     )
 
-    const data = (await res.json()) as { id: string; checkout_url: string }
+    const data = parseCheckoutSessionResponse(await res.json())
     return { checkoutId: data.id, checkoutUrl: data.checkout_url }
   }
 
@@ -91,11 +159,7 @@ export class RecurrentePaymentGatewayProvider implements PaymentGatewayProvider 
       'Recurrente change plan failed',
     )
 
-    const data = (await res.json()) as {
-      current_period_start?: string
-      current_period_end: string
-      proration_charge?: { amount_in_cents?: number }
-    }
+    const data = parseChangePlanResponse(await res.json())
     return {
       currentPeriodStart: data.current_period_start ? new Date(data.current_period_start) : new Date(),
       currentPeriodEnd: new Date(data.current_period_end),
@@ -115,11 +179,7 @@ export class RecurrentePaymentGatewayProvider implements PaymentGatewayProvider 
       'Recurrente subscription lookup failed',
     )
 
-    const data = (await res.json()) as {
-      status: string
-      current_period_start?: string | null
-      current_period_end?: string | null
-    }
+    const data = parseSubscriptionLookupResponse(await res.json())
 
     return {
       status: data.status,
@@ -136,7 +196,7 @@ export class RecurrentePaymentGatewayProvider implements PaymentGatewayProvider 
       'Recurrente checkout lookup failed',
     )
 
-    const data = (await res.json()) as { status: string }
+    const data = parseCheckoutStatusResponse(await res.json())
     return { status: data.status }
   }
 
@@ -171,7 +231,7 @@ export class RecurrentePaymentGatewayProvider implements PaymentGatewayProvider 
       'Recurrente one-time checkout creation failed',
     )
 
-    const data = (await res.json()) as { id: string; checkout_url: string }
+    const data = parseCheckoutSessionResponse(await res.json())
     return { checkoutId: data.id, checkoutUrl: data.checkout_url }
   }
 

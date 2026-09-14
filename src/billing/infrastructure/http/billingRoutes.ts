@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import type { BillingController } from './BillingController'
+import type { BillingController, CheckoutReturnQuery, PlanIdBody, TopUpCreditsBody } from './BillingController'
 import type { createAuthMiddleware } from '../../../identity/infrastructure/http/authMiddleware'
 
 const checkoutBodySchema = {
@@ -7,6 +7,18 @@ const checkoutBodySchema = {
   required: ['planId'],
   properties: {
     planId: { type: 'string' },
+  },
+} as const
+
+// GET con querystring (no multipart) — JSON Schema sí aplica normal acá, a diferencia de los
+// endpoints multipart de publishing/shorts (Fastify no valida schema contra multipart/form-data,
+// ver github.com/fastify/fastify/issues/4127: el body ahí llega como stream de parts, no como
+// objeto plano, así que no hay nada que el validador de schema pueda revisar todavía).
+const checkoutReturnQuerySchema = {
+  type: 'object',
+  properties: {
+    result: { type: 'string' },
+    flow: { type: 'string' },
   },
 } as const
 
@@ -31,9 +43,13 @@ export function registerBillingRoutes(
 
       // Puente de retorno del checkout alojado (ver CreateCheckoutSessionUseCase) — pública,
       // sin authMiddleware: es la navegación GET de vuelta desde app.recurrente.com.
-      billingApp.get('/checkout-return', (req, reply) => controller.checkoutReturn(req, reply))
+      billingApp.get<{ Querystring: CheckoutReturnQuery }>(
+        '/checkout-return',
+        { schema: { querystring: checkoutReturnQuerySchema } },
+        (req, reply) => controller.checkoutReturn(req, reply),
+      )
 
-      billingApp.post(
+      billingApp.post<{ Body: PlanIdBody }>(
         '/checkout',
         { preHandler: authMiddleware, schema: { body: checkoutBodySchema } },
         (req, reply) => controller.checkout(req, reply),
@@ -41,13 +57,13 @@ export function registerBillingRoutes(
 
       billingApp.post('/cancel', { preHandler: authMiddleware }, (req, reply) => controller.cancel(req, reply))
 
-      billingApp.post(
+      billingApp.post<{ Body: PlanIdBody }>(
         '/change-plan',
         { preHandler: authMiddleware, schema: { body: checkoutBodySchema } },
         (req, reply) => controller.changePlan(req, reply),
       )
 
-      billingApp.post(
+      billingApp.post<{ Body: TopUpCreditsBody }>(
         '/credits/topup',
         { preHandler: authMiddleware, schema: { body: topUpBodySchema } },
         (req, reply) => controller.topUpCredits(req, reply),

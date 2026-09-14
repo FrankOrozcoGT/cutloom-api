@@ -24,6 +24,20 @@ function withResult(returnUrlBase: string, result: 'success' | 'cancel'): string
   return url.toString()
 }
 
+export interface CheckoutReturnQuery {
+  result?: string
+  flow?: string
+}
+
+export interface PlanIdBody {
+  planId: string
+}
+
+export interface TopUpCreditsBody {
+  amountInCents: number
+  currency?: string
+}
+
 export class BillingController {
   constructor(
     private readonly createCheckoutSessionUseCase: CreateCheckoutSessionUseCase,
@@ -44,10 +58,9 @@ export class BillingController {
    * viene de app.recurrente.com. No consulta el pago — la confirmación real llega
    * aparte por webhook; esto solo reenvía el resultado a la página correcta del frontend.
    */
-  async checkoutReturn(req: FastifyRequest, reply: FastifyReply) {
-    const { result, flow } = req.query as { result?: string; flow?: string }
-    const outcome = result === 'success' ? 'success' : 'cancel'
-    const section = flow === 'credits' ? 'credits' : 'billing'
+  async checkoutReturn(req: FastifyRequest<{ Querystring: CheckoutReturnQuery }>, reply: FastifyReply) {
+    const outcome = req.query.result === 'success' ? 'success' : 'cancel'
+    const section = req.query.flow === 'credits' ? 'credits' : 'billing'
 
     return reply.redirect(`${this.frontendUrl}/${section}/${outcome}`)
   }
@@ -75,17 +88,15 @@ export class BillingController {
     return reply.status(200).send(result)
   }
 
-  async checkout(req: FastifyRequest, reply: FastifyReply) {
+  async checkout(req: FastifyRequest<{ Body: PlanIdBody }>, reply: FastifyReply) {
     if (!req.organizationId) {
       return reply.status(400).send({ error: 'MISSING_ORGANIZATION' })
     }
 
-    const { planId } = req.body as { planId: string }
-
     try {
       const result = await this.createCheckoutSessionUseCase.execute({
         organizationId: req.organizationId,
-        planId,
+        planId: req.body.planId,
         returnUrlBase: this.urls.checkoutReturnUrl,
       })
       return reply.status(200).send({ checkoutUrl: result.checkoutUrl })
@@ -113,17 +124,15 @@ export class BillingController {
     }
   }
 
-  async changePlan(req: FastifyRequest, reply: FastifyReply) {
+  async changePlan(req: FastifyRequest<{ Body: PlanIdBody }>, reply: FastifyReply) {
     if (!req.organizationId) {
       return reply.status(400).send({ error: 'MISSING_ORGANIZATION' })
     }
 
-    const { planId } = req.body as { planId: string }
-
     try {
       const result = await this.changePlanUseCase.execute({
         organizationId: req.organizationId,
-        newPlanId: planId,
+        newPlanId: req.body.planId,
       })
       return reply.status(200).send(result)
     } catch (error) {
@@ -140,18 +149,16 @@ export class BillingController {
     }
   }
 
-  async topUpCredits(req: FastifyRequest, reply: FastifyReply) {
+  async topUpCredits(req: FastifyRequest<{ Body: TopUpCreditsBody }>, reply: FastifyReply) {
     if (!req.organizationId) {
       return reply.status(400).send({ error: 'MISSING_ORGANIZATION' })
     }
 
-    const { amountInCents, currency } = req.body as { amountInCents: number; currency?: string }
-
     try {
       const result = await this.topUpCreditsUseCase.execute({
         organizationId: req.organizationId,
-        amountInCents,
-        currency: currency ?? this.urls.defaultCurrency,
+        amountInCents: req.body.amountInCents,
+        currency: req.body.currency ?? this.urls.defaultCurrency,
         successUrl: withResult(this.urls.creditsReturnUrl, 'success'),
         cancelUrl: withResult(this.urls.creditsReturnUrl, 'cancel'),
       })

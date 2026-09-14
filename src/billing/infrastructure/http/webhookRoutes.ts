@@ -1,10 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import type { PaymentGatewayProvider } from '../../domain/ports/PaymentGatewayProvider'
+import type { PaymentGatewayProvider, WebhookHeaders } from '../../domain/ports/PaymentGatewayProvider'
 import type { ActivateSubscriptionUseCase } from '../../application/use-cases/ActivateSubscriptionUseCase'
 import type { RenewalUseCase } from '../../application/use-cases/RenewalUseCase'
 import type { PaymentFailureUseCase } from '../../application/use-cases/PaymentFailureUseCase'
 import type { TopUpCreditsUseCase } from '../../application/use-cases/TopUpCreditsUseCase'
 import type { RecordDonationUseCase } from '../../application/use-cases/RecordDonationUseCase'
+import { isRecord } from '../../../shared/domain/validation'
 
 interface RecurrenteCheckoutPayload {
   id: string
@@ -46,39 +47,101 @@ export interface WebhookModule {
   paymentGatewayProvider: PaymentGatewayProvider
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
+
+/** Primer punto de validación de forma del webhook: solo extrae el discriminante de ruteo. */
+function parseEventType(value: unknown): string | undefined {
+  return isRecord(value) && typeof value.event_type === 'string' ? value.event_type : undefined
 }
 
-/** Único punto de validación de forma del webhook — de aquí en adelante el tipo se propaga sin recastear. */
-function parsePaymentEventPayload(value: unknown): RecurrentePaymentEventPayload {
-  if (!isRecord(value) || typeof value.event_type !== 'string' || typeof value.id !== 'string') {
-    throw new Error('Recurrente payment event payload missing event_type/id')
+const PAYMENT_EVENT_TYPES = [
+  'payment_intent.succeeded',
+  'payment_intent.failed',
+  'intent.succeeded',
+  'intent.failed',
+  'setup_intent.succeeded',
+] as const satisfies readonly RecurrentePaymentEventPayload['event_type'][]
+
+function parseStringRecord(value: unknown): Record<string, string> {
+  if (!isRecord(value) || Object.values(value).some((v) => typeof v !== 'string')) {
+    throw new Error('Expected a record of string values')
   }
-  const checkout = value.checkout
-  if (checkout !== undefined && (!isRecord(checkout) || typeof checkout.id !== 'string')) {
-    throw new Error('Recurrente payment event payload has malformed checkout')
+  return value as Record<string, string>
+}
+
+function parseCheckoutPayload(value: unknown): RecurrenteCheckoutPayload {
+  if (!isRecord(value) || typeof value.id !== 'string') {
+    throw new Error('Recurrente checkout payload missing id')
+  }
+  return {
+    id: value.id,
+    metadata: value.metadata !== undefined ? parseStringRecord(value.metadata) : undefined,
+    total_in_cents: typeof value.total_in_cents === 'number' ? value.total_in_cents : undefined,
+    currency: typeof value.currency === 'string' ? value.currency : undefined,
+  }
+}
+
+/** Único punto de validación de forma completa del webhook — de aquí en adelante el tipo se propaga sin recastear. */
+function parsePaymentEventPayload(value: unknown): RecurrentePaymentEventPayload {
+  if (!isRecord(value) || typeof value.id !== 'string') {
+    throw new Error('Recurrente payment event payload missing id')
+  }
+  const eventType = PAYMENT_EVENT_TYPES.find((t) => t === value.event_type)
+  if (!eventType) {
+    throw new Error('Recurrente payment event payload has unknown event_type')
   }
   const subscription = value.subscription
   if (subscription !== undefined && (!isRecord(subscription) || typeof subscription.id !== 'string')) {
     throw new Error('Recurrente payment event payload has malformed subscription')
   }
-  return value as unknown as RecurrentePaymentEventPayload
+  return {
+    event_type: eventType,
+    id: value.id,
+    checkout: value.checkout !== undefined ? parseCheckoutPayload(value.checkout) : undefined,
+    subscription: isRecord(subscription) && typeof subscription.id === 'string' ? { id: subscription.id } : undefined,
+  }
 }
+
+const SUBSCRIPTION_EVENT_TYPES = [
+  'subscription.create',
+  'subscription.cancel',
+  'subscription.past_due',
+  'subscription.pause',
+  'subscription.unpause',
+  'subscription.reactivate',
+] as const satisfies readonly RecurrenteSubscriptionEventPayload['event_type'][]
 
 function parseSubscriptionEventPayload(value: unknown): RecurrenteSubscriptionEventPayload {
-  if (!isRecord(value) || typeof value.event_type !== 'string' || typeof value.id !== 'string') {
-    throw new Error('Recurrente subscription event payload missing event_type/id')
+  if (!isRecord(value) || typeof value.id !== 'string') {
+    throw new Error('Recurrente subscription event payload missing id')
   }
-  return value as unknown as RecurrenteSubscriptionEventPayload
+  const eventType = SUBSCRIPTION_EVENT_TYPES.find((t) => t === value.event_type)
+  if (!eventType) {
+    throw new Error('Recurrente subscription event payload has unknown event_type')
+  }
+  if (value.customer_email !== undefined && typeof value.customer_email !== 'string') {
+    throw new Error('Recurrente subscription event payload has malformed customer_email')
+  }
+  return {
+    event_type: eventType,
+    id: value.id,
+    customer_email: typeof value.customer_email === 'string' ? value.customer_email : undefined,
+  }
 }
 
-function extractSvixHeaders(req: FastifyRequest) {
-  return {
-    svixId: req.headers['svix-id'] as string,
-    svixTimestamp: req.headers['svix-timestamp'] as string,
-    svixSignature: req.headers['svix-signature'] as string,
+/** Un header duplicado en la request real llega como string[] — para headers de firma/idempotencia solo un único valor es válido. */
+function singleHeaderValue(value: string | string[] | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+/** Devuelve null si falta alguno de los tres headers de firma Svix (o llega duplicado como string[]). */
+function extractSvixHeaders(req: FastifyRequest): WebhookHeaders | null {
+  const svixId = singleHeaderValue(req.headers['svix-id'])
+  const svixTimestamp = singleHeaderValue(req.headers['svix-timestamp'])
+  const svixSignature = singleHeaderValue(req.headers['svix-signature'])
+  if (!svixId || !svixTimestamp || !svixSignature) {
+    return null
   }
+  return { svixId, svixTimestamp, svixSignature }
 }
 
 export function registerWebhookRoutes(app: FastifyInstance, module: WebhookModule) {
@@ -90,11 +153,15 @@ export function registerWebhookRoutes(app: FastifyInstance, module: WebhookModul
         cb(null, body)
       })
 
-      webhookApp.post('/recurrente', async (req, reply) => {
-        const rawBody = req.body as string
+      // El genérico Body: string declara, para esta ruta, exactamente lo que el content-type
+      // parser scoped de arriba ya garantiza en runtime — mismo patrón que las declaraciones
+      // de módulo de authMiddleware.ts (tipar la garantía real en el punto donde se establece,
+      // no repetir un chequeo/cast en cada uso). Un `declare module 'fastify'` global para
+      // FastifyRequest.body rompería el tipado del resto de rutas, que sí reciben JSON parseado.
+      webhookApp.post<{ Body: string }>('/recurrente', async (req, reply) => {
+        const rawBody = req.body
         const headers = extractSvixHeaders(req)
-
-        if (!headers.svixId || !headers.svixTimestamp || !headers.svixSignature) {
+        if (!headers) {
           return reply.status(400).send({ error: 'MISSING_SIGNATURE_HEADERS' })
         }
 
@@ -103,24 +170,22 @@ export function registerWebhookRoutes(app: FastifyInstance, module: WebhookModul
           return reply.status(400).send({ error: 'INVALID_SIGNATURE' })
         }
 
-        const payload = JSON.parse(rawBody) as { event_type?: string } & Record<string, unknown>
+        const payload: unknown = JSON.parse(rawBody)
         req.log.info({ payload }, 'Recurrente webhook payload received')
 
-        if (
-          payload.event_type === 'payment_intent.succeeded' ||
-          payload.event_type === 'intent.succeeded' ||
-          payload.event_type === 'setup_intent.succeeded'
-        ) {
+        const eventType = parseEventType(payload)
+
+        if (eventType === 'payment_intent.succeeded' || eventType === 'intent.succeeded' || eventType === 'setup_intent.succeeded') {
           await handlePaymentSucceeded(parsePaymentEventPayload(payload), module)
           return reply.status(200).send({ ok: true })
         }
 
-        if (payload.event_type === 'payment_intent.failed' || payload.event_type === 'intent.failed') {
+        if (eventType === 'payment_intent.failed' || eventType === 'intent.failed') {
           await handlePaymentFailed(parsePaymentEventPayload(payload), module)
           return reply.status(200).send({ ok: true })
         }
 
-        if (typeof payload.event_type === 'string' && payload.event_type.startsWith('subscription.')) {
+        if (eventType?.startsWith('subscription.')) {
           await handleSubscriptionEvent(parseSubscriptionEventPayload(payload), module)
           return reply.status(200).send({ ok: true })
         }

@@ -16,6 +16,8 @@ export interface SubscriptionRepository {
   findByRecurrenteCheckoutId(recurrenteCheckoutId: string): Promise<Subscription | null>
   upsertByOrganizationId(input: UpsertSubscriptionInput): Promise<Subscription>
   updateStatus(id: string, status: SubscriptionStatus): Promise<void>
+  /** Caso bulk de updateStatus: actualiza el status de varias suscripciones en una sola operación. */
+  updateStatusForIds(ids: string[], status: SubscriptionStatus): Promise<void>
   extendPeriod(id: string, currentPeriodStart: Date, currentPeriodEnd: Date): Promise<void>
   markPastDue(id: string, gracePeriodEndsAt: Date): Promise<void>
   setCancelAtPeriodEnd(id: string, cancelAtPeriodEnd: boolean): Promise<void>

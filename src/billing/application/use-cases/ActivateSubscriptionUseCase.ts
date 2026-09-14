@@ -46,8 +46,10 @@ export class ActivateSubscriptionUseCase {
       currentPeriodEnd: input.currentPeriodEnd,
     })
 
+    // El acceso en sí se deriva en vivo de subscription.status + plan_features (ver
+    // AuthorizeFeatureUsageUseCase) — acá solo se reinicia el consumo del nuevo ciclo.
     const planFeatures = await this.planRepository.findFeaturesByPlanId(plan.id)
-    await this.entitlementRepository.grantAll(
+    await this.entitlementRepository.resetUsageForFeatures(
       subscription.organizationId,
       planFeatures.map((f) => f.feature),
     )

@@ -11,6 +11,8 @@ export class FeatureAccessDeniedError extends Error {
 export interface AuthorizeByEntitlementInput {
   organizationId: string
   feature: string
+  /** Cantidad a consumir del tope: 1 para features por-llamada, minutos redondeados para features por-duración de video/audio. */
+  amount?: number
 }
 
 /**
@@ -27,19 +29,20 @@ export class AuthorizeFeatureUsageUseCase {
    * suscriptores ya activos. Agotado el tope, bloquea aunque el entitlement siga activo.
    */
   async requireEntitlement(input: AuthorizeByEntitlementInput): Promise<void> {
-    const { entitlement, currentUsageLimit } = await this.entitlementRepository.findAuthorizationContext(
+    const amount = input.amount ?? 1
+    const { active, usageCount, currentUsageLimit } = await this.entitlementRepository.findAuthorizationContext(
       input.organizationId,
       input.feature,
     )
-    if (!entitlement?.active) {
+    if (!active) {
       throw new FeatureAccessDeniedError(input.feature)
     }
-    if (!entitlement.hasRemainingUsage(currentUsageLimit)) {
+    if (currentUsageLimit !== null && usageCount + amount > currentUsageLimit) {
       throw new FeatureAccessDeniedError(input.feature)
     }
 
     try {
-      await this.entitlementRepository.incrementUsage(input.organizationId, input.feature, currentUsageLimit)
+      await this.entitlementRepository.incrementUsage(input.organizationId, input.feature, amount, currentUsageLimit)
     } catch (error) {
       if (error instanceof UsageLimitExceededError) {
         // Tope agotado por otra request concurrente entre el chequeo de arriba y el
