@@ -1,12 +1,41 @@
 import {
   exchangeCodeForGoogleTokens,
+  extractEmailFromIdToken,
   GoogleTokenEndpointError,
   refreshGoogleAccessToken,
 } from '../../../shared/infrastructure/providers/GoogleTokenEndpoint'
 import type { YouTubeOAuthPort, YouTubeTokens } from '../../domain/ports/YouTubeOAuthPort'
+import { isRecord } from '../../../shared/domain/validation'
 
 const AUTHORIZATION_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth'
-const SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+const CHANNELS_ENDPOINT = 'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true'
+// email/openid: solo para mostrar "conectado como X" en el frontend, nunca se usan para
+// autorizar nada. youtube.readonly: necesario para consultar el nombre del canal propio vía
+// channels.list — youtube.upload por sí solo no autoriza ese endpoint de lectura.
+const SCOPES = [
+  'https://www.googleapis.com/auth/youtube.upload',
+  'https://www.googleapis.com/auth/youtube.readonly',
+  'openid',
+  'email',
+]
+
+/** Único punto de validación de forma para la respuesta de channels.list — de aquí en adelante el tipo se propaga sin recastear. */
+function parseChannelTitle(value: unknown): string | null {
+  if (!isRecord(value) || !Array.isArray(value.items) || value.items.length === 0) return null
+  const channel: unknown = value.items[0]
+  if (!isRecord(channel) || !isRecord(channel.snippet) || typeof channel.snippet.title !== 'string') return null
+  return channel.snippet.title
+}
+
+async function fetchChannelTitle(accessToken: string): Promise<string | null> {
+  try {
+    const response = await fetch(CHANNELS_ENDPOINT, { headers: { Authorization: `Bearer ${accessToken}` } })
+    if (!response.ok) return null
+    return parseChannelTitle(await response.json())
+  } catch {
+    return null
+  }
+}
 
 export class YouTubeOAuthError extends Error {
   constructor(message: string) {
@@ -64,11 +93,21 @@ export class YouTubeOAuthProvider implements YouTubeOAuthPort {
         clientSecret: this.options.clientSecret,
         redirectUri: this.options.redirectUri,
       })
-      return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken, expiresAt: tokens.expiresAt }
+      const googleEmail = tokens.idToken ? extractEmailFromIdToken(tokens.idToken) : null
+      const channelTitle = await fetchChannelTitle(tokens.accessToken)
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+        googleEmail,
+        channelTitle,
+      }
     })
   }
 
-  async refreshAccessToken(refreshToken: string): Promise<Omit<YouTubeTokens, 'refreshToken'>> {
+  async refreshAccessToken(
+    refreshToken: string,
+  ): Promise<Omit<YouTubeTokens, 'refreshToken' | 'googleEmail' | 'channelTitle'>> {
     return wrapGoogleTokenEndpointError(async () => {
       const tokens = await refreshGoogleAccessToken({
         refreshToken,

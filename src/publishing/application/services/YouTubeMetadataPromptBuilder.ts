@@ -1,5 +1,5 @@
 import type { YouTubeMetadata } from '../../domain/entities/ContentRevision'
-import { renderPromptTemplate } from '../../infrastructure/prompts/loadPromptTemplate'
+import type { PromptTemplateRenderer } from '../../../shared/domain/ports/PromptTemplateRenderer'
 
 export interface VideoContextSubtitle {
   start: number
@@ -8,13 +8,13 @@ export interface VideoContextSubtitle {
 }
 
 export interface VideoContext {
-  /** Resumen generado por ImproveSubtitlesUseCase (shorts-intelligence). */
+  /** Resumen del contenido del video/segmento — dato opaco para publishing, provisto ya armado por el caller. */
   summary?: string
   /** Subtítulos del segmento, ya recortados al short en cuestión. */
   subtitles?: VideoContextSubtitle[]
-  /** Motivo por el que DetectShortsUseCase marcó este segmento como candidato. */
+  /** Motivo por el que se marcó este segmento como candidato — dato opaco para publishing. */
   detectedReason?: string
-  /** Score final asignado por ScoreShortsUseCase (0 a 1). */
+  /** Score de calidad del candidato, 0 a 1 — dato opaco para publishing. */
   score?: number
 }
 
@@ -74,8 +74,10 @@ function buildEditorPrompt(input: BuildYouTubeMetadataPromptInput): string {
  * solo recibe el prompt final ya armado como string.
  */
 export class YouTubeMetadataPromptBuilder {
+  constructor(private readonly renderPromptTemplate: PromptTemplateRenderer) {}
+
   build(input: BuildYouTubeMetadataPromptInput): string {
-    return renderPromptTemplate('youtube-metadata.md', {
+    return this.renderPromptTemplate('youtube-metadata.md', {
       contextBlock: buildContextBlock(input.context),
       historyBlock: buildHistoryBlock(input.previousRevision),
       prompt: buildEditorPrompt(input),

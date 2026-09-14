@@ -26,6 +26,11 @@ export const youtubeOAuthTokens = pgTable(
     // null cuando Google no devolvió refresh_token (p.ej. reconexión sin prompt=consent previo).
     encryptedRefreshToken: text('encrypted_refresh_token'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    // Solo informativos (mostrar "conectado como X" en el frontend) — nunca se usan para
+    // autorizar nada, la autorización real es el access/refresh token. Null en filas creadas
+    // antes de pedir los scopes email/youtube.readonly (ver YouTubeOAuthProvider).
+    googleEmail: text('google_email'),
+    channelTitle: text('channel_title'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { and, eq, gt, isNull, lt, ne, or, sql } from 'drizzle-orm'
-import { PostgresError } from 'postgres'
+import postgres from 'postgres'
 import type { Database } from '../../../shared/infrastructure/db/client'
 import { youtubeVideos } from '../db/schema'
 import { YouTubeVideo, YouTubeVideoStatus } from '../../domain/entities/YouTubeVideo'
@@ -15,7 +15,7 @@ const ACTIVE_SOURCE_ID_CONSTRAINT = 'youtube_videos_active_source_id_idx'
 /** true si el error es la violación del unique index parcial de sourceId activo (código 23505 = unique_violation) — Drizzle envuelve el PostgresError real en DrizzleQueryError.cause. */
 function isActiveSourceIdViolation(error: unknown): boolean {
   const cause = error instanceof Error ? error.cause : undefined
-  return cause instanceof PostgresError && cause.code === '23505' && cause.constraint_name === ACTIVE_SOURCE_ID_CONSTRAINT
+  return cause instanceof postgres.PostgresError && cause.code === '23505' && cause.constraint_name === ACTIVE_SOURCE_ID_CONSTRAINT
 }
 
 /** Tipo real del parámetro `tx` que Drizzle pasa al callback de `db.transaction(...)` — se deriva por inferencia en vez de importar tipos internos de drizzle-orm/pg-core, para no acoplarse a su estructura interna entre versiones. */
@@ -76,21 +76,30 @@ export class DrizzleYouTubeVideoRepository implements YouTubeVideoRepository {
     if (inputs.length === 0) return []
     let rows: (typeof youtubeVideos.$inferSelect)[]
     try {
-      rows = await this.conn
-        .insert(youtubeVideos)
-        .values(
-          inputs.map((input) => ({
-            organizationId: input.organizationId,
-            seriesId: input.seriesId,
-            sourceId: input.sourceId,
-            videoType: input.videoType,
-            metadataRevisionId: input.metadataRevisionId,
-            youtubeVideoId: null,
-            status: YouTubeVideoStatus.Uploading,
-            publishAt: input.publishAt,
-          })),
-        )
-        .returning()
+      // El INSERT corre dentro de su propio SAVEPOINT (siempre hay una transacción activa acá:
+      // createManyPending solo se llama desde dentro de withOrganizationLock) — si viola el
+      // unique constraint, Postgres solo revierte hasta este savepoint, no toda la transacción
+      // externa. Sin esto, la transacción entera queda "aborted" tras el error y la query de
+      // verificación de más abajo (que necesita seguir usando esa misma transacción, para
+      // mantener el lock de organización) fallaría también, ocultando el error real detrás de
+      // "current transaction is aborted, commands ignored until end of transaction block".
+      rows = await (this.conn as Transaction).transaction(async (savepointTx) => {
+        return savepointTx
+          .insert(youtubeVideos)
+          .values(
+            inputs.map((input) => ({
+              organizationId: input.organizationId,
+              seriesId: input.seriesId,
+              sourceId: input.sourceId,
+              videoType: input.videoType,
+              metadataRevisionId: input.metadataRevisionId,
+              youtubeVideoId: null,
+              status: YouTubeVideoStatus.Uploading,
+              publishAt: input.publishAt,
+            })),
+          )
+          .returning()
+      })
     } catch (error) {
       if (isActiveSourceIdViolation(error)) {
         // Postgres no identifica cuál fila del batch violó el constraint — se resuelve con

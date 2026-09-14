@@ -14,6 +14,8 @@ function toEntity(row: typeof youtubeOAuthTokens.$inferSelect): YouTubeOAuthToke
     encryptedAccessToken: row.encryptedAccessToken,
     encryptedRefreshToken: row.encryptedRefreshToken,
     expiresAt: row.expiresAt,
+    googleEmail: row.googleEmail,
+    channelTitle: row.channelTitle,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   })
@@ -40,6 +42,8 @@ export class DrizzleYouTubeOAuthTokenRepository implements YouTubeOAuthTokenRepo
         encryptedAccessToken: input.encryptedAccessToken,
         encryptedRefreshToken: input.encryptedRefreshToken,
         expiresAt: input.expiresAt,
+        googleEmail: input.googleEmail,
+        channelTitle: input.channelTitle,
       })
       .onConflictDoUpdate({
         target: youtubeOAuthTokens.organizationId,
@@ -52,6 +56,10 @@ export class DrizzleYouTubeOAuthTokenRepository implements YouTubeOAuthTokenRepo
             ? input.encryptedRefreshToken
             : sql`${youtubeOAuthTokens.encryptedRefreshToken}`,
           expiresAt: input.expiresAt,
+          // Mismo criterio: si channels.list falló en esta reconexión (ej. cuota, error
+          // transitorio) no se pisa el nombre ya guardado con null.
+          googleEmail: input.googleEmail ?? sql`${youtubeOAuthTokens.googleEmail}`,
+          channelTitle: input.channelTitle ?? sql`${youtubeOAuthTokens.channelTitle}`,
           updatedAt: new Date(),
         },
       })

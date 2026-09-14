@@ -416,6 +416,7 @@ export class PublishingController {
 
     try {
       const { sourceId, topic, tone, additionalInstructions, feedback, context } = parseGenerateMetadataBody(req.body)
+      this.logger.info({ organizationId: req.organizationId, sourceId }, '[generateMetadata] use case starting')
       const revision = await this.generateYouTubeMetadataUseCase.execute({
         organizationId: req.organizationId,
         sourceId,
@@ -425,6 +426,7 @@ export class PublishingController {
         feedback,
         context,
       })
+      this.logger.info({ organizationId: req.organizationId, sourceId }, '[generateMetadata] use case completed')
       return reply.status(200).send({
         revisionId: revision.id,
         version: revision.version,

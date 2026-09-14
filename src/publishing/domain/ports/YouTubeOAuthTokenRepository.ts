@@ -5,6 +5,8 @@ export interface UpsertYouTubeOAuthTokenInput {
   encryptedAccessToken: string
   encryptedRefreshToken: string | null
   expiresAt: Date
+  googleEmail: string | null
+  channelTitle: string | null
 }
 
 export interface YouTubeOAuthTokenRepository {

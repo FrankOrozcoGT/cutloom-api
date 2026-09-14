@@ -3,6 +3,7 @@ import type { ContentRevisionRepository } from '../../domain/ports/ContentRevisi
 import type { MetadataGenerator } from '../../domain/ports/MetadataGenerator'
 import type { PublishingFeatureAuthorizer } from '../../domain/ports/PublishingFeatureAuthorizer'
 import { YouTubeMetadataPromptBuilder, type VideoContext } from '../services/YouTubeMetadataPromptBuilder'
+import type { Logger } from '../../../shared/domain/ports/Logger'
 
 const YOUTUBE_AI_FEATURE = 'youtube_ai'
 
@@ -31,6 +32,7 @@ export class GenerateYouTubeMetadataUseCase {
     private readonly metadataGenerator: MetadataGenerator,
     private readonly promptBuilder: YouTubeMetadataPromptBuilder,
     private readonly contentRevisionRepository: ContentRevisionRepository,
+    private readonly logger: Logger,
   ) {}
 
   async execute(input: GenerateYouTubeMetadataInput): Promise<ContentRevision> {
@@ -38,12 +40,16 @@ export class GenerateYouTubeMetadataUseCase {
       throw new MissingTopicError()
     }
 
+    this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] requireEntitlement starting')
     await this.featureAuthorizer.requireEntitlement({
       organizationId: input.organizationId,
       feature: YOUTUBE_AI_FEATURE,
     })
+    this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] requireEntitlement completed')
 
+    this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] findLatestBySourceId starting')
     const latest = await this.contentRevisionRepository.findLatestBySourceId(input.organizationId, input.sourceId)
+    this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] findLatestBySourceId completed')
 
     const prompt = this.promptBuilder.build({
       topic: input.topic,
@@ -53,13 +59,18 @@ export class GenerateYouTubeMetadataUseCase {
       previousRevision: latest ? { metadata: latest.metadata, feedback: input.feedback } : undefined,
     })
 
+    this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] metadataGenerator.generate starting')
     const { metadata } = await this.metadataGenerator.generate(prompt)
+    this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] metadataGenerator.generate completed')
 
-    return this.contentRevisionRepository.create({
+    this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] contentRevisionRepository.create starting')
+    const revision = await this.contentRevisionRepository.create({
       organizationId: input.organizationId,
       sourceId: input.sourceId,
       prompt,
       metadata,
     })
+    this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] contentRevisionRepository.create completed')
+    return revision
   }
 }

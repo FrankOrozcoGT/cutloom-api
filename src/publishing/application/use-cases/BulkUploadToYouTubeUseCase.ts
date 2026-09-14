@@ -183,6 +183,8 @@ export class BulkUploadToYouTubeUseCase {
         encryptedAccessToken: this.encryptionService.encrypt(accessToken),
         encryptedRefreshToken: token.encryptedRefreshToken,
         expiresAt: refreshed.expiresAt,
+        googleEmail: token.googleEmail,
+        channelTitle: token.channelTitle,
       })
     }
 
@@ -241,6 +243,8 @@ export class BulkUploadToYouTubeUseCase {
       publishAtBySourceId,
       accessToken,
       refreshToken,
+      token.googleEmail,
+      token.channelTitle,
       this.oauthProvider,
       this.youTubeUploader,
       this.youTubeVideoRepository,
@@ -260,6 +264,8 @@ export class BulkUploadSession {
     private readonly publishAtBySourceId: Map<string, Date>,
     private accessToken: string,
     private readonly refreshToken: string | null,
+    private readonly googleEmail: string | null,
+    private readonly channelTitle: string | null,
     private readonly oauthProvider: YouTubeOAuthPort,
     private readonly youTubeUploader: YouTubeUploader,
     private readonly youTubeVideoRepository: YouTubeVideoRepository,
@@ -306,6 +312,8 @@ export class BulkUploadSession {
           encryptedAccessToken: this.encryptionService.encrypt(refreshed.accessToken),
           encryptedRefreshToken: this.encryptionService.encrypt(this.refreshToken),
           expiresAt: refreshed.expiresAt,
+          googleEmail: this.googleEmail,
+          channelTitle: this.channelTitle,
         })
       }
       // El upload a YouTube nunca se confirmó — es seguro marcar el registro local como fallido.

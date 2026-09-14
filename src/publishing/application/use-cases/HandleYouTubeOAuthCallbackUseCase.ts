@@ -59,6 +59,8 @@ export class HandleYouTubeOAuthCallbackUseCase {
       // conserva el refresh_token existente en ese caso en vez de perderlo (ver upsert).
       encryptedRefreshToken: tokens.refreshToken ? this.encryptionService.encrypt(tokens.refreshToken) : null,
       expiresAt: tokens.expiresAt,
+      googleEmail: tokens.googleEmail,
+      channelTitle: tokens.channelTitle,
     })
   }
 }

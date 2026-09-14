@@ -5,6 +5,9 @@ export interface YouTubeOAuthTokenProps {
   /** Google no siempre devuelve refresh_token (solo en el primer consent con prompt=consent) — null si no vino. */
   encryptedRefreshToken: string | null
   expiresAt: Date
+  /** Solo informativo, para mostrar "conectado como X" — null si el token se creó antes de pedir estos scopes. */
+  googleEmail: string | null
+  channelTitle: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -34,6 +37,14 @@ export class YouTubeOAuthToken {
 
   get expiresAt(): Date {
     return this.props.expiresAt
+  }
+
+  get googleEmail(): string | null {
+    return this.props.googleEmail
+  }
+
+  get channelTitle(): string | null {
+    return this.props.channelTitle
   }
 
   get createdAt(): Date {

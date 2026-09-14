@@ -10,6 +10,23 @@ export interface GoogleTokens {
   idToken: string | null
 }
 
+/**
+ * Extrae el email del payload del id_token (JWT) sin verificar su firma — aceptable acá
+ * porque el id_token llega directo de Google por HTTPS como parte de la respuesta del token
+ * endpoint (no es un JWT de terceros no confiable pasado por el cliente), así que no hay
+ * superficie de spoofing que la verificación de firma evitaría en este flujo específico.
+ */
+export function extractEmailFromIdToken(idToken: string): string | null {
+  const payload = idToken.split('.')[1]
+  if (!payload) return null
+  try {
+    const decoded: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8'))
+    return isRecord(decoded) && typeof decoded.email === 'string' ? decoded.email : null
+  } catch {
+    return null
+  }
+}
+
 /** Único punto de validación de forma para la respuesta del token endpoint de Google — de aquí en adelante el tipo se propaga sin recastear. */
 function parseGoogleTokenResponse(value: unknown): GoogleTokens {
   if (

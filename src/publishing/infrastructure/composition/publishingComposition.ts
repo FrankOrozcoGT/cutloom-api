@@ -7,6 +7,7 @@ import { AesTokenEncryptionService } from '../services/AesTokenEncryptionService
 import type { YouTubeOAuthTokenRepository } from '../../domain/ports/YouTubeOAuthTokenRepository'
 import { DrizzleContentRevisionRepository } from '../repositories/DrizzleContentRevisionRepository'
 import { DeepSeekMetadataProvider } from '../providers/DeepSeekMetadataProvider'
+import { renderPromptTemplate } from '../prompts/loadPromptTemplate'
 import { YouTubeMetadataPromptBuilder } from '../../application/services/YouTubeMetadataPromptBuilder'
 import { StartYouTubeOAuthUseCase } from '../../application/use-cases/StartYouTubeOAuthUseCase'
 import { HandleYouTubeOAuthCallbackUseCase } from '../../application/use-cases/HandleYouTubeOAuthCallbackUseCase'
@@ -52,7 +53,7 @@ export function buildPublishingModule(
     },
     logger,
   )
-  const youTubeMetadataPromptBuilder = new YouTubeMetadataPromptBuilder()
+  const youTubeMetadataPromptBuilder = new YouTubeMetadataPromptBuilder(renderPromptTemplate)
 
   const startYouTubeOAuthUseCase = new StartYouTubeOAuthUseCase(youTubeOAuthProvider)
   const handleYouTubeOAuthCallbackUseCase = new HandleYouTubeOAuthCallbackUseCase(
@@ -65,6 +66,7 @@ export function buildPublishingModule(
     deepSeekMetadataProvider,
     youTubeMetadataPromptBuilder,
     contentRevisionRepository,
+    logger,
   )
 
   const youTubeVideoRepository = new DrizzleYouTubeVideoRepository(db)

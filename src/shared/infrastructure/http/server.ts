@@ -78,9 +78,13 @@ export function buildServer() {
       },
     },
     {
-      isConnected: async (organizationId) => {
+      getStatus: async (organizationId) => {
         const token = await youTubeOAuthTokenRepository.findByOrganizationId(organizationId)
-        return token !== null
+        return {
+          connected: token !== null,
+          googleEmail: token?.googleEmail ?? null,
+          channelTitle: token?.channelTitle ?? null,
+        }
       },
     },
   )
