@@ -4,6 +4,7 @@ import type {
   ScoreShortsResult,
   ShortsIntelligencePort,
 } from '../../domain/ports/ShortsIntelligencePort'
+import { isRecord } from '../../../shared/domain/validation'
 
 export interface DeepSeekConfig {
   apiKey: string
@@ -27,10 +28,6 @@ interface DetectShortsShape {
 
 interface ScoreShortsShape {
   scored: { index: number; score: number }[]
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
 }
 
 /** Único punto de validación de forma para respuestas del LLM — de aquí en adelante el tipo se propaga sin recastear. */

@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import type { FeatureUsageAuthorizer } from '../../domain/ports/FeatureUsageAuthorizer'
+import type { Logger } from '../../../shared/domain/ports/Logger'
 import type { Database } from '../../../shared/infrastructure/db/client'
 import { readEnv } from '../../../shared/infrastructure/config/readEnv'
 import { DeepSeekProvider } from '../providers/DeepSeekProvider'
@@ -21,7 +22,11 @@ export interface ShortsModule {
   usageEventRepository: UsageEventRepository
 }
 
-export function buildShortsModule(db: Database, featureUsageAuthorizer: FeatureUsageAuthorizer): ShortsModule {
+export function buildShortsModule(
+  db: Database,
+  featureUsageAuthorizer: FeatureUsageAuthorizer,
+  logger: Logger,
+): ShortsModule {
   const usageEventRepository = new DrizzleUsageEventRepository(db)
 
   const deepSeekProvider = new DeepSeekProvider({
@@ -70,6 +75,7 @@ export function buildShortsModule(db: Database, featureUsageAuthorizer: FeatureU
     senseVoiceProvider,
     shortScorePromptBuilder,
     usageEventService,
+    logger,
   )
 
   const controller = new ShortsController(improveSubtitlesUseCase, detectShortsUseCase, scoreShortsUseCase)

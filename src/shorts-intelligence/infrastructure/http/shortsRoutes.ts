@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import type { ShortsController } from './ShortsController'
+import type { ShortsController, DetectShortsBody, ImproveSubtitlesBody } from './ShortsController'
 import type { createAuthMiddleware } from '../../../identity/infrastructure/http/authMiddleware'
 
 const segmentSchema = {
@@ -54,13 +54,13 @@ export function registerShortsRoutes(
 ) {
   app.register(
     (shortsApp, _opts, done) => {
-      shortsApp.post(
+      shortsApp.post<{ Body: ImproveSubtitlesBody }>(
         '/improve-subtitles',
         { preHandler: authMiddleware, schema: { body: improveSubtitlesBodySchema } },
         (req, reply) => controller.improveSubtitles(req, reply),
       )
 
-      shortsApp.post(
+      shortsApp.post<{ Body: DetectShortsBody }>(
         '/detect',
         { preHandler: authMiddleware, schema: { body: detectShortsBodySchema } },
         (req, reply) => controller.detectShorts(req, reply),

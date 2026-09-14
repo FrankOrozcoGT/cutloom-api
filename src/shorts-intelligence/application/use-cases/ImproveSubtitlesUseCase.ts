@@ -3,7 +3,8 @@ import type { ShortsIntelligencePort, SubtitleSegmentInput } from '../../domain/
 import { SubtitleCorrection } from '../../domain/entities/SubtitleCorrection'
 import { SubtitlePromptBuilder } from '../services/SubtitlePromptBuilder'
 import type { UsageEventService } from '../services/UsageEventService'
-import { DEEPSEEK_MODEL, EmptySegmentsError, SHORTS_AI_FEATURE } from '../../domain/constants'
+import { ADVANCED_SUBTITLES_FEATURE, DEEPSEEK_MODEL, EmptySegmentsError } from '../../domain/constants'
+import { totalMinutes } from '../../domain/minutes'
 
 export class SubtitlesLlmFailedError extends Error {
   constructor(cause?: unknown) {
@@ -39,7 +40,8 @@ export class ImproveSubtitlesUseCase {
 
     await this.featureUsageAuthorizer.requireEntitlement({
       organizationId: input.organizationId,
-      feature: SHORTS_AI_FEATURE,
+      feature: ADVANCED_SUBTITLES_FEATURE,
+      amount: totalMinutes(input.segments),
     })
 
     const prompt = this.promptBuilder.build({ segments: input.segments, userContext: input.userContext })

@@ -16,13 +16,14 @@ import {
 } from '../../application/use-cases/ScoreShortsUseCase'
 import type { ShortIdealJson } from '../../application/services/ShortPromptBuilder'
 import type { SubtitleSegmentInput } from '../../domain/ports/ShortsIntelligencePort'
+import { isRecord } from '../../../shared/domain/validation'
 
-interface ImproveSubtitlesBody {
+export interface ImproveSubtitlesBody {
   segments: SubtitleSegmentInput[]
   userContext?: string
 }
 
-interface DetectShortsBody {
+export interface DetectShortsBody {
   segments: SubtitleSegmentInput[]
   shortIdealJson?: ShortIdealJson
 }
@@ -41,13 +42,12 @@ export class InvalidScoreShortsPayloadError extends Error {
 
 function isDetectedShortCandidate(value: unknown): value is DetectedShortCandidate {
   return (
-    typeof value === 'object' &&
-    value !== null &&
-    typeof (value as Record<string, unknown>).id === 'string' &&
-    typeof (value as Record<string, unknown>).start === 'number' &&
-    typeof (value as Record<string, unknown>).end === 'number' &&
-    typeof (value as Record<string, unknown>).confidence === 'number' &&
-    typeof (value as Record<string, unknown>).reason === 'string'
+    isRecord(value) &&
+    typeof value.id === 'string' &&
+    typeof value.start === 'number' &&
+    typeof value.end === 'number' &&
+    typeof value.confidence === 'number' &&
+    typeof value.reason === 'string'
   )
 }
 
@@ -56,16 +56,13 @@ function isOptional<T>(value: unknown, check: (v: unknown) => v is T): value is 
 }
 
 function isShortIdealJson(value: unknown): value is ShortIdealJson {
-  if (typeof value !== 'object' || value === null) {
-    return false
-  }
-  const v = value as Record<string, unknown>
   return (
-    isOptional(v.topic, (x): x is string => typeof x === 'string') &&
-    isOptional(v.targetAudience, (x): x is string => typeof x === 'string') &&
-    isOptional(v.targetDurationSeconds, (x): x is number => typeof x === 'number') &&
-    isOptional(v.tone, (x): x is string => typeof x === 'string') &&
-    isOptional(v.count, (x): x is number => typeof x === 'number')
+    isRecord(value) &&
+    isOptional(value.topic, (x): x is string => typeof x === 'string') &&
+    isOptional(value.targetAudience, (x): x is string => typeof x === 'string') &&
+    isOptional(value.targetDurationSeconds, (x): x is number => typeof x === 'number') &&
+    isOptional(value.tone, (x): x is string => typeof x === 'string') &&
+    isOptional(value.count, (x): x is number => typeof x === 'number')
   )
 }
 
@@ -77,16 +74,16 @@ function parseScoreShortsPayload(raw: string): ScoreShortsPayload {
   } catch {
     throw new InvalidScoreShortsPayloadError('"payload" is not valid JSON')
   }
-  if (typeof value !== 'object' || value === null) {
+  if (!isRecord(value)) {
     throw new InvalidScoreShortsPayloadError('"payload" must be a JSON object')
   }
-  const candidates = (value as Record<string, unknown>).candidates
+  const candidates = value.candidates
   if (!Array.isArray(candidates) || !candidates.every(isDetectedShortCandidate)) {
     throw new InvalidScoreShortsPayloadError(
       '"payload.candidates" must be an array of {id,start,end,confidence,reason}',
     )
   }
-  const shortIdealJson = (value as Record<string, unknown>).shortIdealJson
+  const shortIdealJson = value.shortIdealJson
   if (!isOptional(shortIdealJson, isShortIdealJson)) {
     throw new InvalidScoreShortsPayloadError(
       '"payload.shortIdealJson" must be an object with optional {topic,targetAudience,targetDurationSeconds,tone,count}',
@@ -107,18 +104,16 @@ export class ShortsController {
     private readonly scoreShortsUseCase: ScoreShortsUseCase,
   ) {}
 
-  async improveSubtitles(req: FastifyRequest, reply: FastifyReply) {
+  async improveSubtitles(req: FastifyRequest<{ Body: ImproveSubtitlesBody }>, reply: FastifyReply) {
     if (!req.organizationId) {
       return reply.status(400).send({ error: 'MISSING_ORGANIZATION' })
     }
 
-    const body = req.body as ImproveSubtitlesBody
-
     try {
       const result = await this.improveSubtitlesUseCase.execute({
         organizationId: req.organizationId,
-        segments: body.segments,
-        userContext: body.userContext,
+        segments: req.body.segments,
+        userContext: req.body.userContext,
       })
       return reply.status(200).send({
         summary: result.summary,
@@ -138,18 +133,16 @@ export class ShortsController {
     }
   }
 
-  async detectShorts(req: FastifyRequest, reply: FastifyReply) {
+  async detectShorts(req: FastifyRequest<{ Body: DetectShortsBody }>, reply: FastifyReply) {
     if (!req.organizationId) {
       return reply.status(400).send({ error: 'MISSING_ORGANIZATION' })
     }
 
-    const body = req.body as DetectShortsBody
-
     try {
       const result = await this.detectShortsUseCase.execute({
         organizationId: req.organizationId,
-        segments: body.segments,
-        shortIdealJson: body.shortIdealJson,
+        segments: req.body.segments,
+        shortIdealJson: req.body.shortIdealJson,
       })
       return reply.status(200).send(result)
     } catch (error) {

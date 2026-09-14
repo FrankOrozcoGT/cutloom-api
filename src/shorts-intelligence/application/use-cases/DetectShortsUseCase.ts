@@ -3,6 +3,7 @@ import type { ShortsIntelligencePort, SubtitleSegmentInput } from '../../domain/
 import { ShortPromptBuilder, type ShortIdealJson } from '../services/ShortPromptBuilder'
 import type { UsageEventService } from '../services/UsageEventService'
 import { DEEPSEEK_MODEL, EmptySegmentsError, SHORTS_AI_FEATURE } from '../../domain/constants'
+import { totalMinutes } from '../../domain/minutes'
 
 export class ShortsLlmFailedError extends Error {
   constructor(cause?: unknown) {
@@ -52,6 +53,7 @@ export class DetectShortsUseCase {
     await this.featureUsageAuthorizer.requireEntitlement({
       organizationId: input.organizationId,
       feature: SHORTS_AI_FEATURE,
+      amount: totalMinutes(input.segments),
     })
 
     const prompt = this.shortPromptBuilder.build({ segments: input.segments, shortIdeal: input.shortIdealJson })

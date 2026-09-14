@@ -5,7 +5,9 @@ import { ShortScorePromptBuilder, type CandidateForScoring } from '../services/S
 import type { ShortIdealJson } from '../services/ShortPromptBuilder'
 import type { UsageEventService } from '../services/UsageEventService'
 import { DEEPSEEK_MODEL, SHORTS_AI_FEATURE } from '../../domain/constants'
+import { totalMinutes } from '../../domain/minutes'
 import type { DetectedShortCandidate } from './DetectShortsUseCase'
+import type { Logger } from '../../../shared/domain/ports/Logger'
 
 const MAX_CLIPS = 30
 const MAX_CLIP_SECONDS = 180
@@ -71,6 +73,7 @@ export class ScoreShortsUseCase {
     private readonly emotionAnalyzerPort: EmotionAnalyzerPort,
     private readonly shortScorePromptBuilder: ShortScorePromptBuilder,
     private readonly usageEventService: UsageEventService,
+    private readonly logger: Logger,
   ) {}
 
   async execute(input: ScoreShortsInput): Promise<ScoreShortsOutput> {
@@ -91,6 +94,7 @@ export class ScoreShortsUseCase {
     await this.featureUsageAuthorizer.requireEntitlement({
       organizationId: input.organizationId,
       feature: SHORTS_AI_FEATURE,
+      amount: totalMinutes(input.candidates),
     })
 
     const warnings: string[] = []
@@ -145,8 +149,9 @@ export class ScoreShortsUseCase {
       candidates.map(async (candidate) => {
         const clip = clipByCandidateId.get(candidate.id)
         if (!clip) {
-          console.error(
-            `[ScoreShortsUseCase] No audio clip found for candidate [${candidate.start}, ${candidate.end}] — treating as failed emotion analysis`,
+          this.logger.error(
+            { start: candidate.start, end: candidate.end },
+            'ScoreShortsUseCase: no audio clip found for candidate — treating as failed emotion analysis',
           )
           anyFailed = true
           return undefined
@@ -155,9 +160,9 @@ export class ScoreShortsUseCase {
           const { emotion } = await this.emotionAnalyzerPort.analyze(clip.audioBuffer)
           return emotion
         } catch (error) {
-          console.error(
-            `[ScoreShortsUseCase] Emotion analysis failed for candidate [${candidate.start}, ${candidate.end}]`,
-            error,
+          this.logger.error(
+            { start: candidate.start, end: candidate.end, error },
+            'ScoreShortsUseCase: emotion analysis failed for candidate',
           )
           anyFailed = true
           return undefined
@@ -185,8 +190,9 @@ export class ScoreShortsUseCase {
       const scores = candidates.map((candidate) => {
         const score = scoreByIndex.get(candidate.index)
         if (score === undefined) {
-          console.error(
-            `[ScoreShortsUseCase] LLM did not return a score for candidate [${candidate.start}, ${candidate.end}] — falling back to confidence`,
+          this.logger.error(
+            { start: candidate.start, end: candidate.end },
+            'ScoreShortsUseCase: LLM did not return a score for candidate — falling back to confidence',
           )
         }
         return score ?? candidate.confidence
