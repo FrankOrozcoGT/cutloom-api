@@ -174,16 +174,20 @@ export class AuthController {
       return reply.status(401).send({ error: 'MISSING_ACCESS_TOKEN' })
     }
 
-    const [entitlements, youtubeConnected] = await Promise.all([
+    const [entitlements, youtube] = await Promise.all([
       req.organizationId ? this.entitlementsReader.findByOrganizationId(req.organizationId) : Promise.resolve([]),
-      req.organizationId ? this.youTubeConnectionReader.isConnected(req.organizationId) : Promise.resolve(false),
+      req.organizationId
+        ? this.youTubeConnectionReader.getStatus(req.organizationId)
+        : Promise.resolve({ connected: false, googleEmail: null, channelTitle: null }),
     ])
 
     return reply.status(200).send({
       user: serializeUser(req.user),
       organizationId: req.organizationId ?? null,
       entitlements,
-      youtubeConnected,
+      youtubeConnected: youtube.connected,
+      youtubeGoogleEmail: youtube.googleEmail,
+      youtubeChannelTitle: youtube.channelTitle,
     })
   }
 

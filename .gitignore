@@ -3,6 +3,7 @@ node_modules/
 dist/
 .env
 .env.local
+.env.agent
 *.log
 .kimi-code/
 .mcp.json
