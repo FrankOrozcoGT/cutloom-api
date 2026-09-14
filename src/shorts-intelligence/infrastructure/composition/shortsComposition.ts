@@ -6,6 +6,7 @@ import type { Database } from '../../../shared/infrastructure/db/client'
 import { readEnv } from '../../../shared/infrastructure/config/readEnv'
 import { DeepSeekProvider } from '../providers/DeepSeekProvider'
 import { SenseVoiceProvider } from '../providers/SenseVoiceProvider'
+import { renderPromptTemplate } from '../prompts/loadPromptTemplate'
 import { DrizzleUsageEventRepository } from '../repositories/DrizzleUsageEventRepository'
 import { SubtitlePromptBuilder } from '../../application/services/SubtitlePromptBuilder'
 import { ShortPromptBuilder } from '../../application/services/ShortPromptBuilder'
@@ -29,11 +30,14 @@ export function buildShortsModule(
 ): ShortsModule {
   const usageEventRepository = new DrizzleUsageEventRepository(db)
 
-  const deepSeekProvider = new DeepSeekProvider({
-    apiKey: readEnv('DEEPSEEK_API_KEY', process.env.NODE_ENV === 'production' ? undefined : 'sk-placeholder'),
-    baseUrl: readEnv('DEEPSEEK_API_BASE_URL', 'https://api.deepseek.com'),
-    model: readEnv('DEEPSEEK_MODEL', 'deepseek-v4-flash'),
-  })
+  const deepSeekProvider = new DeepSeekProvider(
+    {
+      apiKey: readEnv('DEEPSEEK_API_KEY', process.env.NODE_ENV === 'production' ? undefined : 'sk-placeholder'),
+      baseUrl: readEnv('DEEPSEEK_API_BASE_URL', 'https://api.deepseek.com'),
+      model: readEnv('DEEPSEEK_MODEL', 'deepseek-v4-flash'),
+    },
+    logger,
+  )
 
   const senseVoiceProvider = new SenseVoiceProvider({
     modelPath: readEnv('SENSEVOICE_MODEL_PATH', '/opt/models/sense-voice/model.int8.onnx'),
@@ -50,9 +54,9 @@ export function buildShortsModule(
     requestTimeoutMs: Number(readEnv('SENSEVOICE_REQUEST_TIMEOUT_MS', String(30 * 1000))),
   })
 
-  const subtitlePromptBuilder = new SubtitlePromptBuilder()
-  const shortPromptBuilder = new ShortPromptBuilder()
-  const shortScorePromptBuilder = new ShortScorePromptBuilder()
+  const subtitlePromptBuilder = new SubtitlePromptBuilder(renderPromptTemplate)
+  const shortPromptBuilder = new ShortPromptBuilder(renderPromptTemplate)
+  const shortScorePromptBuilder = new ShortScorePromptBuilder(renderPromptTemplate)
   const usageEventService = new UsageEventService(usageEventRepository)
 
   const improveSubtitlesUseCase = new ImproveSubtitlesUseCase(

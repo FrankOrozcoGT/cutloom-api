@@ -1,5 +1,5 @@
 import type { SubtitleSegmentInput } from '../../domain/ports/ShortsIntelligencePort'
-import { renderPromptTemplate } from '../../infrastructure/prompts/loadPromptTemplate'
+import type { PromptTemplateRenderer } from '../../../shared/domain/ports/PromptTemplateRenderer'
 
 /**
  * Todos los campos son opcionales: si el usuario no los llenó en el form
@@ -24,6 +24,8 @@ const DEFAULT_COUNT = 8
 
 /** Construye el prompt de detección de shorts a partir del template detect-shorts.md (ver loadPromptTemplate). */
 export class ShortPromptBuilder {
+  constructor(private readonly renderPromptTemplate: PromptTemplateRenderer) {}
+
   build(input: BuildShortsPromptInput): string {
     const ideal = input.shortIdeal ?? {}
 
@@ -42,7 +44,7 @@ export class ShortPromptBuilder {
     const durationSeconds = ideal.targetDurationSeconds ?? DEFAULT_TARGET_DURATION_SECONDS
     const count = ideal.count ?? DEFAULT_COUNT
 
-    return renderPromptTemplate('detect-shorts.md', {
+    return this.renderPromptTemplate('detect-shorts.md', {
       topicLine,
       audienceLine,
       toneLine,

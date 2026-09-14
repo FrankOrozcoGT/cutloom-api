@@ -1,5 +1,5 @@
 import type { ShortIdealJson } from './ShortPromptBuilder'
-import { renderPromptTemplate } from '../../infrastructure/prompts/loadPromptTemplate'
+import type { PromptTemplateRenderer } from '../../../shared/domain/ports/PromptTemplateRenderer'
 
 export interface CandidateForScoring {
   /** Posición del candidato en el array original — el LLM debe repetirlo tal cual en su respuesta en vez de reescribir start/end, así el match no depende de comparar floats. */
@@ -25,6 +25,8 @@ export interface BuildScorePromptInput {
  * score-shorts.md (loadPromptTemplate).
  */
 export class ShortScorePromptBuilder {
+  constructor(private readonly renderPromptTemplate: PromptTemplateRenderer) {}
+
   build(input: BuildScorePromptInput): string {
     const ideal = input.shortIdeal ?? {}
     const intentLines = [
@@ -35,7 +37,7 @@ export class ShortScorePromptBuilder {
 
     const intentBlock = intentLines.length > 0 ? intentLines.join('\n') + '\n\n' : ''
 
-    return renderPromptTemplate('score-shorts.md', {
+    return this.renderPromptTemplate('score-shorts.md', {
       intentBlock,
       candidates: JSON.stringify(input.candidates),
     })
