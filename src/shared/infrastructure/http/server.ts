@@ -47,11 +47,11 @@ function adaptRequireEntitlement<E extends Error>(
 }
 
 export function buildServer() {
-  // 'info' (default de Fastify) loguea cada request completa — volumen alto en producción,
-  // sumado a que hoy no hay agregador de logs externo (solo stdout + rotación de Docker, ver
-  // docker-compose.yml), así que se reduce a 'warn' fuera de dev para no saturar el disco.
-  const logLevel = process.env.NODE_ENV === 'production' ? 'warn' : 'info'
-  const app = Fastify({ logger: { level: logLevel } })
+  // 'info' en todos los entornos: con 'warn' en producción, un fallo real de un usuario
+  // (ej. auth con Google) no dejaba ningún rastro — ni siquiera un 4xx queda registrado por
+  // debajo de 'warn', así que era imposible diagnosticar incidentes reales sin poder
+  // reproducirlos. Volumen de disco: mitigado por la rotación de Docker (ver docker-compose.yml).
+  const app = Fastify({ logger: { level: 'info' } })
 
   app.register(cors, {
     origin: corsOrigins(),
