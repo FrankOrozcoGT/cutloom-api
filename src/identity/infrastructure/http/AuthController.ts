@@ -13,8 +13,10 @@ import { WeakPasswordError } from '../../domain/value-objects/Password'
 import { InvalidTokenError } from '../../domain/ports/TokenService'
 import type { User } from '../../domain/entities/User'
 import type { EntitlementsReader } from '../../domain/ports/EntitlementsReader'
-import type { YouTubeConnectionReader } from '../../domain/ports/YouTubeConnectionReader'
+import type { PlatformConnectionReader } from '../../domain/ports/PlatformConnectionReader'
+import type { CreditBalanceReader } from '../../domain/ports/CreditBalanceReader'
 import { isSafeReturnTo, buildOAuthCallbackUrl } from '../../../shared/infrastructure/http/oauthCallbackRedirect'
+import { SSE_TOKEN_COOKIE, sseTokenCookieOptions } from './sseAuthMiddleware'
 
 export interface EmailPasswordBody {
   email: string
@@ -58,7 +60,9 @@ export class AuthController {
     private readonly googleProvider: GoogleIdentityProvider,
     private readonly frontendUrl: string,
     private readonly entitlementsReader: EntitlementsReader,
-    private readonly youTubeConnectionReader: YouTubeConnectionReader,
+    private readonly youTubeConnectionReader: PlatformConnectionReader,
+    private readonly tikTokConnectionReader: PlatformConnectionReader,
+    private readonly creditBalanceReader: CreditBalanceReader,
   ) {}
 
   async register(req: FastifyRequest<{ Body: EmailPasswordBody }>, reply: FastifyReply) {
@@ -84,6 +88,8 @@ export class AuthController {
       })
 
       reply.setCookie(REFRESH_TOKEN_COOKIE, result.tokens.refreshToken, cookieOptions())
+      // Cookie separada (no la de refreshToken) para autenticar EventSource — ver sseAuthMiddleware.
+      reply.setCookie(SSE_TOKEN_COOKIE, result.tokens.accessToken, sseTokenCookieOptions())
       return reply.status(successStatus).send({
         user: serializeUser(result.user),
         accessToken: result.tokens.accessToken,
@@ -130,6 +136,7 @@ export class AuthController {
       })
 
       reply.setCookie(REFRESH_TOKEN_COOKIE, result.tokens.refreshToken, cookieOptions())
+      reply.setCookie(SSE_TOKEN_COOKIE, result.tokens.accessToken, sseTokenCookieOptions())
       return reply.redirect(this.buildCallbackUrl({ isNewUser: String(result.isNewUser) }, returnTo))
     } catch (error) {
       if (error instanceof EmailExistsWithGoogleError) {
@@ -166,6 +173,7 @@ export class AuthController {
     }
 
     reply.clearCookie(REFRESH_TOKEN_COOKIE, cookieOptions())
+    reply.clearCookie(SSE_TOKEN_COOKIE, sseTokenCookieOptions())
     return reply.status(204).send()
   }
 
@@ -174,20 +182,27 @@ export class AuthController {
       return reply.status(401).send({ error: 'MISSING_ACCESS_TOKEN' })
     }
 
-    const [entitlements, youtube] = await Promise.all([
+    const [entitlements, youtube, tiktok, creditBalance] = await Promise.all([
       req.organizationId ? this.entitlementsReader.findByOrganizationId(req.organizationId) : Promise.resolve([]),
       req.organizationId
         ? this.youTubeConnectionReader.getStatus(req.organizationId)
-        : Promise.resolve({ connected: false, googleEmail: null, channelTitle: null }),
+        : Promise.resolve({ connected: false, platformAccountInfo: null }),
+      req.organizationId
+        ? this.tikTokConnectionReader.getStatus(req.organizationId)
+        : Promise.resolve({ connected: false, platformAccountInfo: null }),
+      req.organizationId ? this.creditBalanceReader.findByOrganizationId(req.organizationId) : Promise.resolve(0),
     ])
 
     return reply.status(200).send({
       user: serializeUser(req.user),
       organizationId: req.organizationId ?? null,
       entitlements,
+      creditBalance,
       youtubeConnected: youtube.connected,
-      youtubeGoogleEmail: youtube.googleEmail,
-      youtubeChannelTitle: youtube.channelTitle,
+      youtubeGoogleEmail: (youtube.platformAccountInfo?.googleEmail as string | null | undefined) ?? null,
+      youtubeChannelTitle: (youtube.platformAccountInfo?.channelTitle as string | null | undefined) ?? null,
+      tiktokConnected: tiktok.connected,
+      tiktokDisplayName: (tiktok.platformAccountInfo?.displayName as string | null | undefined) ?? null,
     })
   }
 
@@ -202,6 +217,7 @@ export class AuthController {
       const tokens = await this.refreshTokenUseCase.execute(refreshToken)
 
       reply.setCookie(REFRESH_TOKEN_COOKIE, tokens.refreshToken, cookieOptions())
+      reply.setCookie(SSE_TOKEN_COOKIE, tokens.accessToken, sseTokenCookieOptions())
       return reply.status(200).send({ accessToken: tokens.accessToken })
     } catch (error) {
       return this.handleError(error, reply)

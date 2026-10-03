@@ -15,19 +15,25 @@ import { LogoutUseCase } from '../../application/use-cases/LogoutUseCase'
 import { RefreshTokenUseCase } from '../../application/use-cases/RefreshTokenUseCase'
 import { AuthController } from '../http/AuthController'
 import { createAuthMiddleware } from '../http/authMiddleware'
+import { createSseAuthMiddleware } from '../http/sseAuthMiddleware'
 import type { IdentityProvider } from '../../domain/ports/IdentityProvider'
 import type { EntitlementsReader } from '../../domain/ports/EntitlementsReader'
-import type { YouTubeConnectionReader } from '../../domain/ports/YouTubeConnectionReader'
+import type { PlatformConnectionReader } from '../../domain/ports/PlatformConnectionReader'
+import type { CreditBalanceReader } from '../../domain/ports/CreditBalanceReader'
 
 export interface AuthModule {
   controller: AuthController
   authMiddleware: ReturnType<typeof createAuthMiddleware>
+  sseAuthMiddleware: ReturnType<typeof createSseAuthMiddleware>
 }
 
 export function buildAuthModule(
   db: Database,
   entitlementsReader: EntitlementsReader,
-  youTubeConnectionReader: YouTubeConnectionReader,
+  youTubeConnectionReader: PlatformConnectionReader,
+  tikTokConnectionReader: PlatformConnectionReader,
+  creditBalanceReader: CreditBalanceReader,
+  apiBaseUrl: string,
 ): AuthModule {
   const userRepository = new DrizzleUserRepository(db)
   const organizationRepository = new DrizzleOrganizationRepository(db)
@@ -47,7 +53,11 @@ export function buildAuthModule(
   const googleProvider = new GoogleIdentityProvider({
     clientId: readEnv('GOOGLE_CLIENT_ID', process.env.NODE_ENV === 'production' ? undefined : 'dev-placeholder'),
     clientSecret: readEnv('GOOGLE_CLIENT_SECRET', process.env.NODE_ENV === 'production' ? undefined : 'dev-placeholder'),
-    redirectUri: readEnv('GOOGLE_REDIRECT_URI', 'http://localhost:3000/api/auth/google/callback'),
+    // Construido desde API_BASE_URL (único dominio base del backend) en vez de una variable
+    // suelta por proveedor — evita que cambiar de ambiente (dev/túnel/prod) requiera actualizar
+    // 3 redirect_uri por separado y queden desincronizados entre sí (ver GOOGLE_REDIRECT_URI/
+    // YOUTUBE_OAUTH_REDIRECT_URI/TIKTOK_OAUTH_REDIRECT_URI, eliminadas del .env).
+    redirectUri: `${apiBaseUrl}/api/auth/google/callback`,
   })
 
   const providers: Record<AuthProviderName, IdentityProvider> = {
@@ -74,8 +84,11 @@ export function buildAuthModule(
     readEnv('FRONTEND_URL', 'http://localhost:5173'),
     entitlementsReader,
     youTubeConnectionReader,
+    tikTokConnectionReader,
+    creditBalanceReader,
   )
   const authMiddleware = createAuthMiddleware(tokenService, tokenBlacklistRepository, userRepository)
+  const sseAuthMiddleware = createSseAuthMiddleware(tokenService, userRepository)
 
-  return { controller, authMiddleware }
+  return { controller, authMiddleware, sseAuthMiddleware }
 }
