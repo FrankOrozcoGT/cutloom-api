@@ -16,6 +16,7 @@ import type { EntitlementsReader } from '../../domain/ports/EntitlementsReader'
 import type { PlatformConnectionReader } from '../../domain/ports/PlatformConnectionReader'
 import type { CreditBalanceReader } from '../../domain/ports/CreditBalanceReader'
 import { isSafeReturnTo, buildOAuthCallbackUrl } from '../../../shared/infrastructure/http/oauthCallbackRedirect'
+import { strictSameSite, laxSameSite, secureCookie } from '../../../shared/infrastructure/http/cookieSameSitePolicy'
 import { SSE_TOKEN_COOKIE, sseTokenCookieOptions } from './sseAuthMiddleware'
 
 export interface EmailPasswordBody {
@@ -32,8 +33,8 @@ const OAUTH_RETURN_TO_COOKIE = 'oauth_return_to'
 function cookieOptions() {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict' as const,
+    secure: secureCookie,
+    sameSite: strictSameSite,
     path: REFRESH_TOKEN_COOKIE_PATH,
   }
 }
@@ -41,8 +42,8 @@ function cookieOptions() {
 function stateCookieOptions() {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax' as const, // Google's redirect back is a top-level cross-site GET; 'strict' would drop the cookie.
+    secure: secureCookie,
+    sameSite: laxSameSite,
     path: OAUTH_STATE_COOKIE_PATH,
     maxAge: 60 * 10,
   }

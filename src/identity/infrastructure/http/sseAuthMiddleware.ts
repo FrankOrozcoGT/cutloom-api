@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { TokenService } from '../../domain/ports/TokenService'
 import type { UserRepository } from '../../domain/ports/UserRepository'
+import { strictSameSite, secureCookie } from '../../../shared/infrastructure/http/cookieSameSitePolicy'
 
 export const SSE_TOKEN_COOKIE = 'sseAccessToken'
 export const SSE_TOKEN_COOKIE_PATH = '/api/notifications'
@@ -8,8 +9,8 @@ export const SSE_TOKEN_COOKIE_PATH = '/api/notifications'
 export function sseTokenCookieOptions() {
   return {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict' as const,
+    secure: secureCookie,
+    sameSite: strictSameSite,
     path: SSE_TOKEN_COOKIE_PATH,
   }
 }
