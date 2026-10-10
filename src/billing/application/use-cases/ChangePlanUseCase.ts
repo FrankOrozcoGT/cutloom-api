@@ -70,12 +70,12 @@ export class ChangePlanUseCase {
 
     // El acceso en sí se deriva en vivo de subscription.planId (ya actualizado arriba) +
     // plan_features (ver AuthorizeFeatureUsageUseCase) — no hace falta otorgar ni desactivar
-    // nada acá. Solo se reinicia el consumo de las features del plan nuevo, para que el
-    // cambio de plan no herede contador de uso acumulado bajo un tope distinto.
+    // nada acá. Solo se carga el balance de las features del plan nuevo, para que el cambio
+    // de plan no herede balance consumido bajo un tope distinto.
     const newPlanFeatures = await this.planRepository.findFeaturesByPlanId(newPlan.id)
-    await this.entitlementRepository.resetUsageForFeatures(
+    await this.entitlementRepository.chargeBalanceForFeatures(
       subscription.organizationId,
-      newPlanFeatures.map((f) => f.feature),
+      newPlanFeatures.map((f) => ({ feature: f.feature, usageLimit: f.usageLimit })),
     )
 
     return {

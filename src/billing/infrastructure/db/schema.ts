@@ -1,9 +1,18 @@
-import { boolean, index, integer, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
+import { boolean, index, integer, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { organizations } from '../../../identity/infrastructure/db/schema'
 
 export const subscriptionStatusEnum = pgEnum('subscription_status', ['active', 'past_due', 'inactive'])
 export const subscriptionIntervalEnum = pgEnum('subscription_interval', ['month', 'year'])
 export const paymentStatusEnum = pgEnum('payment_status', ['pending', 'succeeded', 'failed'])
+
+// text PK, no uuid: el identificador es el propio nombre semántico ya usado en código
+// ('shorts_ai', 'youtube_ai', 'advanced_subtitles') — evita una columna de FK separada del
+// nombre legible y mantiene el mismo string que ya circula por casos de uso y plan_features.
+export const features = pgTable('features', {
+  id: text('id').primaryKey(),
+  creditEligible: boolean('credit_eligible').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
 
 export const plans = pgTable('plans', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -23,7 +32,9 @@ export const planFeatures = pgTable(
     planId: uuid('plan_id')
       .notNull()
       .references(() => plans.id, { onDelete: 'cascade' }),
-    feature: text('feature').notNull(),
+    feature: text('feature')
+      .notNull()
+      .references(() => features.id, { onDelete: 'restrict' }),
     // null = acceso ilimitado durante el ciclo; number = tope de usos por ciclo de facturación.
     usageLimit: integer('usage_limit'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -58,12 +69,14 @@ export const subscriptions = pgTable(
   ],
 )
 
-// Registro de consumo por (organización, feature, ciclo de facturación actual) — no decide
-// acceso por sí solo. "¿Esta organización tiene esta feature?" y "¿cuál es su tope?" se
-// resuelven siempre en vivo desde subscriptions (¿activa?) + plan_features (¿el plan actual
-// la incluye? ¿qué usageLimit?), nunca desde una copia otorgada aquí — evita que editar el
-// catálogo de un plan ya existente deje a las organizaciones suscritas con datos
-// desincronizados (grant/deactivate manual por evento de billing, sin fuente de verdad única).
+// Balance de uso restante por (organización, feature, ciclo de facturación actual) — misma
+// mecánica que creditAccounts.balance (un balance que se descuenta), no un contador que sube
+// contra un tope externo. Al activar/renovar/cambiar de plan, se CARGA a plan_features.usageLimit
+// del plan vigente (ver ActivateSubscriptionUseCase/RenewalUseCase/ChangePlanUseCase) — el
+// consumo del ciclo anterior no se arrastra. "¿Esta organización tiene esta feature?" se sigue
+// resolviendo en vivo desde subscriptions (¿activa?) + plan_features (¿el plan actual la
+// incluye?), nunca desde esta tabla — evita que editar el catálogo de un plan ya existente deje
+// a las organizaciones suscritas con datos desincronizados.
 export const entitlements = pgTable(
   'entitlements',
   {
@@ -71,14 +84,23 @@ export const entitlements = pgTable(
     organizationId: uuid('organization_id')
       .notNull()
       .references(() => organizations.id, { onDelete: 'cascade' }),
-    feature: text('feature').notNull(),
-    usageCount: integer('usage_count').notNull().default(0),
+    feature: text('feature')
+      .notNull()
+      .references(() => features.id, { onDelete: 'restrict' }),
+    // Balance restante de este ciclo — baja con cada uso, nunca sube salvo reset de ciclo.
+    // null = la feature no tiene tope (usageLimit null en plan_features): nunca se consume de
+    // acá, el flujo de decisión pasa directo a crédito si el plan no cubre.
+    balance: integer('balance'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex('entitlements_organization_id_feature_idx').on(table.organizationId, table.feature)],
 )
 
+// balance: unidades genéricas de feature (mismas unidades que entitlements.balance /
+// plan_features.usageLimit — minutos, llamadas, lo que cada feature defina) — NO dinero. La
+// conversión dinero->unidades ocurre al recargar (ver TopUpCreditsUseCase / CREDIT_TOPUP_RATE_*),
+// nunca se guarda un monto en centavos acá.
 export const creditAccounts = pgTable(
   'credit_accounts',
   {
@@ -110,6 +132,19 @@ export const creditTransactions = pgTable(
     uniqueIndex('credit_transactions_recurrente_checkout_id_idx').on(table.recurrenteCheckoutId),
   ],
 )
+
+// Una sola fila vigente a la vez (la última por effective_from) — todas las réplicas de una
+// misma configuración de cómputo (droplet actual, o un ECS task definition futuro) son
+// idénticas entre sí, así que no hace falta registrar de qué instancia física vino cada
+// request: alcanza con saber qué config estaba vigente cuando se ejecutó. Usado para convertir
+// CPU-tiempo medido por request (ver usageEvents.cpuTimeMicros) en costo real: (cpuTimeMicros /
+// (cores * duración_del_período_en_micros)) * costPerMonth, prorrateado al período medido.
+export const infraCostConfig = pgTable('infra_cost_config', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  cores: integer('cores').notNull(),
+  costPerMonth: numeric('cost_per_month').notNull(),
+  effectiveFrom: timestamp('effective_from', { withTimezone: true }).notNull().defaultNow(),
+})
 
 export const donations = pgTable('donations', {
   id: uuid('id').primaryKey().defaultRandom(),

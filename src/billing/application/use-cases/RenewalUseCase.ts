@@ -13,8 +13,8 @@ export interface RenewalInput {
  * (evento real de Recurrente: intent.succeeded con subscription.id existente).
  * Idempotente: si el periodEnd reportado no es posterior al que ya tenemos,
  * no hace nada (evita doble extensión ante reintentos de entrega del webhook).
- * Un nuevo ciclo también resetea el contador de uso de cada feature con tope
- * (usageLimit) del plan — el consumo del ciclo anterior no se arrastra.
+ * Un nuevo ciclo también recarga el balance de cada feature a su tope (usageLimit) del
+ * plan — el consumo del ciclo anterior no se arrastra.
  */
 export class RenewalUseCase {
   constructor(
@@ -38,9 +38,9 @@ export class RenewalUseCase {
     await this.subscriptionRepository.extendPeriod(subscription.id, input.currentPeriodStart, input.currentPeriodEnd)
 
     const planFeatures = await this.planRepository.findFeaturesByPlanId(subscription.planId)
-    await this.entitlementRepository.resetUsageForFeatures(
+    await this.entitlementRepository.chargeBalanceForFeatures(
       subscription.organizationId,
-      planFeatures.map((f) => f.feature),
+      planFeatures.map((f) => ({ feature: f.feature, usageLimit: f.usageLimit })),
     )
   }
 }

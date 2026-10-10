@@ -4,6 +4,7 @@ import { DrizzlePlanRepository } from '../repositories/DrizzlePlanRepository'
 import { DrizzleSubscriptionRepository } from '../repositories/DrizzleSubscriptionRepository'
 import { DrizzleEntitlementRepository } from '../repositories/DrizzleEntitlementRepository'
 import { DrizzleCreditAccountRepository } from '../repositories/DrizzleCreditAccountRepository'
+import { DrizzleFeatureRepository } from '../repositories/DrizzleFeatureRepository'
 import { DrizzleDonationRepository } from '../repositories/DrizzleDonationRepository'
 import { RecurrentePaymentGatewayProvider } from '../providers/RecurrentePaymentGatewayProvider'
 import { CreateCheckoutSessionUseCase } from '../../application/use-cases/CreateCheckoutSessionUseCase'
@@ -35,6 +36,7 @@ export interface BillingModule {
   entitlementRepository: EntitlementRepository
   /** Puerto de autorización reutilizable desde otros bounded contexts (ver Unidad de créditos/entitlements). */
   authorizeFeatureUsageUseCase: AuthorizeFeatureUsageUseCase
+  getCreditBalanceUseCase: GetCreditBalanceUseCase
 }
 
 export function buildBillingModule(db: Database): BillingModule {
@@ -42,6 +44,7 @@ export function buildBillingModule(db: Database): BillingModule {
   const subscriptionRepository = new DrizzleSubscriptionRepository(db)
   const entitlementRepository = new DrizzleEntitlementRepository(db)
   const creditAccountRepository = new DrizzleCreditAccountRepository(db)
+  const featureRepository = new DrizzleFeatureRepository(db)
   const donationRepository = new DrizzleDonationRepository(db)
 
   const frontendUrl = readEnv('FRONTEND_URL', 'http://localhost:5173')
@@ -78,13 +81,21 @@ export function buildBillingModule(db: Database): BillingModule {
     planRepository,
     paymentGatewayProvider,
   )
-  const topUpCreditsUseCase = new TopUpCreditsUseCase(creditAccountRepository, paymentGatewayProvider)
+  const topUpCreditsUseCase = new TopUpCreditsUseCase(
+    creditAccountRepository,
+    paymentGatewayProvider,
+    Number(readEnv('CREDIT_TOPUP_RATE_CENTS_PER_UNIT', '100')),
+  )
   const deductCreditsUseCase = new DeductCreditsUseCase(creditAccountRepository)
   const createDonationUseCase = new CreateDonationUseCase(paymentGatewayProvider)
   const recordDonationUseCase = new RecordDonationUseCase(donationRepository)
   const getSubscriptionStatusUseCase = new GetSubscriptionStatusUseCase(subscriptionRepository)
   const getCreditBalanceUseCase = new GetCreditBalanceUseCase(creditAccountRepository)
-  const authorizeFeatureUsageUseCase = new AuthorizeFeatureUsageUseCase(entitlementRepository)
+  const authorizeFeatureUsageUseCase = new AuthorizeFeatureUsageUseCase(
+    entitlementRepository,
+    creditAccountRepository,
+    featureRepository,
+  )
   const listPlansUseCase = new ListPlansUseCase(planRepository)
 
   const controller = new BillingController(
@@ -123,5 +134,6 @@ export function buildBillingModule(db: Database): BillingModule {
     },
     entitlementRepository,
     authorizeFeatureUsageUseCase,
+    getCreditBalanceUseCase,
   }
 }

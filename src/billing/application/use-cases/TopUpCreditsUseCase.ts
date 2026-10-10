@@ -26,11 +26,14 @@ export interface TopUpCreditsResult {
  * PAGO ÚNICO del mismo PaymentGatewayProvider que las suscripciones (createOneTimePaymentSession).
  * El incremento real del balance ocurre en confirmPayment, llamado desde el webhook
  * payment.completed cuando metadata.purpose === 'credits_topup' (ver webhookRoutes.ts).
+ * El balance se mide en unidades genéricas (mismas que plan_features.usageLimit), no en
+ * dinero — topUpRateCentsPerUnit convierte el monto pagado a unidades acreditadas.
  */
 export class TopUpCreditsUseCase {
   constructor(
     private readonly creditAccountRepository: CreditAccountRepository,
     private readonly paymentGatewayProvider: PaymentGatewayProvider,
+    private readonly topUpRateCentsPerUnit: number,
   ) {}
 
   async execute(input: TopUpCreditsInput): Promise<TopUpCreditsResult> {
@@ -52,6 +55,7 @@ export class TopUpCreditsUseCase {
 
   /** Invocado desde el webhook tras confirmar el pago único de la recarga. Idempotente por checkoutId. */
   async confirmPayment(input: { organizationId: string; amountInCents: number; recurrenteCheckoutId: string }): Promise<void> {
-    await this.creditAccountRepository.addCredits(input.organizationId, input.amountInCents, input.recurrenteCheckoutId)
+    const units = Math.floor(input.amountInCents / this.topUpRateCentsPerUnit)
+    await this.creditAccountRepository.addCredits(input.organizationId, units, input.recurrenteCheckoutId)
   }
 }

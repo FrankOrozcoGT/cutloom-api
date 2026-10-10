@@ -1,7 +1,7 @@
-import { and, eq, lt, sql } from 'drizzle-orm'
+import { and, eq, gte, isNull, or, sql } from 'drizzle-orm'
 import type { Database } from '../../../shared/infrastructure/db/client'
 import { entitlements, planFeatures, subscriptions } from '../db/schema'
-import { UsageLimitExceededError } from '../../domain/ports/EntitlementRepository'
+import { PlanBalanceExceededError } from '../../domain/ports/EntitlementRepository'
 import type {
   AuthorizationContext,
   EntitlementRepository,
@@ -13,19 +13,24 @@ export class DrizzleEntitlementRepository implements EntitlementRepository {
 
   async findActiveFeaturesByOrganizationId(organizationId: string): Promise<FeatureAccess[]> {
     const rows = await this.db
-      .select({ feature: planFeatures.feature, usageLimit: planFeatures.usageLimit })
+      .select({
+        feature: planFeatures.feature,
+        usageLimit: planFeatures.usageLimit,
+        planBalance: entitlements.balance,
+      })
       .from(subscriptions)
       .innerJoin(planFeatures, eq(planFeatures.planId, subscriptions.planId))
+      .leftJoin(
+        entitlements,
+        and(eq(entitlements.organizationId, subscriptions.organizationId), eq(entitlements.feature, planFeatures.feature)),
+      )
       .where(and(eq(subscriptions.organizationId, organizationId), eq(subscriptions.status, 'active')))
     return rows
   }
 
   async findAuthorizationContext(organizationId: string, feature: string): Promise<AuthorizationContext> {
     const [row] = await this.db
-      .select({
-        usageLimit: planFeatures.usageLimit,
-        usageCount: entitlements.usageCount,
-      })
+      .select({ planBalance: entitlements.balance })
       .from(subscriptions)
       .innerJoin(
         planFeatures,
@@ -40,63 +45,46 @@ export class DrizzleEntitlementRepository implements EntitlementRepository {
 
     return {
       active: row !== undefined,
-      usageCount: row?.usageCount ?? 0,
-      currentUsageLimit: row?.usageLimit ?? null,
+      planBalance: row?.planBalance ?? null,
     }
   }
 
-  async resetUsage(organizationId: string, feature: string): Promise<void> {
-    return this.resetUsageForFeatures(organizationId, [feature])
-  }
-
-  async resetUsageForFeatures(organizationId: string, features: string[]): Promise<void> {
+  async chargeBalanceForFeatures(
+    organizationId: string,
+    features: { feature: string; usageLimit: number | null }[],
+  ): Promise<void> {
     if (features.length === 0) return
     await this.db
       .insert(entitlements)
-      .values(features.map((feature) => ({ organizationId, feature, usageCount: 0 })))
+      .values(features.map(({ feature, usageLimit }) => ({ organizationId, feature, balance: usageLimit })))
       .onConflictDoUpdate({
         target: [entitlements.organizationId, entitlements.feature],
-        set: { usageCount: 0, updatedAt: new Date() },
+        // set no puede referenciar la fila entrante del VALUES por columna de otra fila
+        // fácilmente en drizzle — como es un upsert con un solo row por (org,feature) a la
+        // vez dentro del .map, cada statement del batch ya trae su propio excluded.balance.
+        set: { balance: sql`excluded.balance`, updatedAt: new Date() },
       })
   }
 
-  async incrementUsage(
-    organizationId: string,
-    feature: string,
-    amount: number,
-    currentUsageLimit: number | null,
-  ): Promise<void> {
-    if (currentUsageLimit === null) {
-      return
-    }
-    // Cubre el caso de la primera fila (INSERT sin conflicto, donde setWhere no aplica):
-    // si el propio amount ya excede el tope, ni siquiera vale la pena intentar el upsert.
-    if (amount > currentUsageLimit) {
-      throw new UsageLimitExceededError(organizationId, feature)
-    }
+  async deductFromPlanBalance(organizationId: string, feature: string, amount: number): Promise<void> {
+    // feature sin tope (balance null): no se descuenta nada, el plan cubre ilimitado — distinto
+    // de "balance en 0", que sí bloquea. El chequeo de saldo suficiente vive en el propio WHERE
+    // del UPDATE (atómico a nivel de fila) para no dejar ventana de carrera entre un SELECT
+    // previo y el UPDATE, igual que CreditAccountRepository.deductCredits.
+    const [updated] = await this.db
+      .update(entitlements)
+      .set({ balance: sql`${entitlements.balance} - ${amount}`, updatedAt: new Date() })
+      .where(
+        and(
+          eq(entitlements.organizationId, organizationId),
+          eq(entitlements.feature, feature),
+          or(isNull(entitlements.balance), gte(entitlements.balance, amount)),
+        ),
+      )
+      .returning({ balance: entitlements.balance })
 
-    await this.db.transaction(async (tx) => {
-      // Upsert atómico: la primera vez que se consume una feature con tope puede no existir
-      // fila todavía en entitlements (nunca se llamó resetUsage para ella, ej. features
-      // nuevas agregadas al catálogo de un plan ya activo) — se crea en 0 antes de sumar,
-      // en el mismo statement, para no depender de un INSERT previo por evento de billing.
-      // El chequeo del tope vive en el propio setWhere del upsert (atómico a nivel de fila
-      // en Postgres) en vez de un SELECT previo — un SELECT-luego-UPDATE separado deja una
-      // ventana de carrera donde dos requests concurrentes leen el mismo usageCount antes
-      // de que ninguno haga commit, permitiendo que ambos pasen el chequeo y excedan el tope.
-      const [updated] = await tx
-        .insert(entitlements)
-        .values({ organizationId, feature, usageCount: amount })
-        .onConflictDoUpdate({
-          target: [entitlements.organizationId, entitlements.feature],
-          set: { usageCount: sql`${entitlements.usageCount} + ${amount}`, updatedAt: new Date() },
-          setWhere: lt(entitlements.usageCount, currentUsageLimit - amount + 1),
-        })
-        .returning({ id: entitlements.id })
-
-      if (!updated) {
-        throw new UsageLimitExceededError(organizationId, feature)
-      }
-    })
+    if (!updated) {
+      throw new PlanBalanceExceededError(organizationId, feature)
+    }
   }
 }
