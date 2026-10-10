@@ -1,28 +1,14 @@
-import type { YouTubeMetadata } from '../../domain/entities/ContentRevision'
 import { PublishedVideoStatus, PublishedVideoType, VideoPlatform, type PublishedVideo } from '../../domain/entities/PublishedVideo'
 import type { BulkUploadRepository } from '../../domain/ports/BulkUploadRepository'
 import type { SourceUploadRepository } from '../../domain/ports/SourceUploadRepository'
-import type { SourceUploadBinaryReader } from '../../domain/ports/SourceUploadBinaryReader'
 import type { PublishedVideoRepository } from '../../domain/ports/PublishedVideoRepository'
-import type { ContentRevisionRepository } from '../../domain/ports/ContentRevisionRepository'
-import type { PlatformCredentialResolver } from '../../domain/ports/PlatformCredentialResolver'
-import type { VideoUploader } from '../../domain/ports/VideoUploader'
-import { VideoUploadQuotaExceededError, VideoUploadRejectedError, VideoUploadTokenExpiredError } from '../../domain/ports/VideoUploader'
-import {
-  SchedulePieceType,
-  ScheduleCapacityExceededError,
-  ScheduleUploadPlanService,
-  type ScheduleSlotItem,
-} from '../services/ScheduleUploadPlanService'
-import { appendLongVideoLink, buildLongVideoLink } from '../services/appendLongVideoLink'
+import { SchedulePieceType, ScheduleCapacityExceededError, ScheduleUploadPlanService, type ScheduleSlotItem } from '../services/ScheduleUploadPlanService'
+import type { PublishPlatformVideoService } from '../services/PublishPlatformVideoService'
 import type { NotificationRepository } from '../../../shared/domain/ports/NotificationRepository'
 import type { NotificationPublisher } from '../../../shared/domain/ports/NotificationPublisher'
 import { NotificationType } from '../../../shared/domain/entities/Notification'
 import type { Logger } from '../../../shared/domain/ports/Logger'
-import type { DeleteBinaryIfAllPlatformsResolvedService } from '../services/DeleteBinaryIfAllPlatformsResolvedService'
 import type { ReconcileBulkUploadStatusService } from '../services/ReconcileBulkUploadStatusService'
-
-const TIKTOK_STUDIO_URL = 'https://www.tiktok.com/tiktokstudio/content'
 
 /**
  * Reacciona a los dos eventos que produce el servidor tus (ver TusBulkUploadHandler):
@@ -39,16 +25,12 @@ export class BulkUploadOrchestrator {
   constructor(
     private readonly bulkUploadRepository: BulkUploadRepository,
     private readonly sourceUploadRepository: SourceUploadRepository,
-    private readonly binaryReader: SourceUploadBinaryReader,
     private readonly publishedVideoRepository: PublishedVideoRepository,
-    private readonly contentRevisionRepository: ContentRevisionRepository,
-    private readonly credentialResolverByPlatform: Record<VideoPlatform, PlatformCredentialResolver>,
-    private readonly uploaderByPlatform: Record<VideoPlatform, VideoUploader>,
     private readonly supportsNativeSchedulingByPlatform: Record<VideoPlatform, boolean>,
     private readonly scheduleUploadPlanService: ScheduleUploadPlanService,
     private readonly notificationRepository: NotificationRepository,
     private readonly notificationPublisher: NotificationPublisher,
-    private readonly deleteBinaryIfAllPlatformsResolved: DeleteBinaryIfAllPlatformsResolvedService,
+    private readonly publishPlatformVideo: PublishPlatformVideoService,
     private readonly reconcileBulkUploadStatus: ReconcileBulkUploadStatusService,
     private readonly logger: Logger,
   ) {}
@@ -74,7 +56,7 @@ export class BulkUploadOrchestrator {
         video.publishAt,
         PublishedVideoStatus.Publishing,
       )
-      await this.publishOne(scheduled)
+      await this.publishPlatformVideo.publish(scheduled)
     }
     await this.reconcileBulkUploadStatus.execute(bulkUploadId)
   }
@@ -116,10 +98,11 @@ export class BulkUploadOrchestrator {
       try {
         // withOrganizationLock sostiene una transacción Postgres real (advisory lock liberado
         // solo al commit) — por eso acá adentro solo se calcula el calendario y se transiciona
-        // estado en BD, nunca se llama a publishOne (streaming de hasta 20GB a la plataforma):
-        // eso mantendría la transacción abierta durante toda la subida y agotaría el pool bajo
-        // pocas subidas concurrentes. Los videos que quedan listos para publicar ahora mismo se
-        // acumulan y se procesan recién después de que el lock ya se liberó.
+        // estado en BD, nunca se llama a publishPlatformVideo.publish (streaming de hasta 20GB a
+        // la plataforma): eso mantendría la transacción abierta durante toda la subida y
+        // agotaría el pool bajo pocas subidas concurrentes. Los videos que quedan listos para
+        // publicar ahora mismo se acumulan y se procesan recién después de que el lock ya se
+        // liberó.
         readyToPublish = await this.publishedVideoRepository.withOrganizationLock(bulkUpload.organizationId, async () => {
           const occupyingSlots = await this.publishedVideoRepository.findOccupyingSlotsByOrganizationId(
             bulkUpload.organizationId,
@@ -175,116 +158,11 @@ export class BulkUploadOrchestrator {
       }
 
       for (const video of readyToPublish) {
-        await this.publishOne(video)
+        await this.publishPlatformVideo.publish(video)
       }
     }
 
     await this.reconcileBulkUploadStatus.execute(bulkUploadId)
-  }
-
-  private async publishOne(video: PublishedVideo): Promise<void> {
-    const supportsNativeScheduling = this.supportsNativeSchedulingByPlatform[video.platform]
-
-    const sourceUpload = await this.sourceUploadRepository.findById(video.sourceUploadId)
-    if (!sourceUpload) {
-      await this.publishedVideoRepository.markFailed(video.organizationId, video.id)
-      await this.deleteBinaryIfAllPlatformsResolved.execute(video.sourceUploadId)
-      return
-    }
-
-    const [revision] = await this.contentRevisionRepository.findByIds(video.organizationId, [video.metadataRevisionId])
-    if (!revision) {
-      await this.publishedVideoRepository.markFailed(video.organizationId, video.id)
-      await this.deleteBinaryIfAllPlatformsResolved.execute(video.sourceUploadId)
-      return
-    }
-
-    try {
-      const accessToken = await this.credentialResolverByPlatform[video.platform].resolveAccessToken(video.platformAccountId)
-      const videoSize = await this.binaryReader.size(sourceUpload.tusUploadId)
-      const videoStream = await this.binaryReader.open(sourceUpload.tusUploadId)
-      const metadata = await this.resolveMetadataWithLongVideoLink(video, revision.metadata)
-
-      const result = await this.uploaderByPlatform[video.platform].upload({
-        accessToken,
-        videoStream,
-        videoSize,
-        metadata,
-        publishAt: supportsNativeScheduling ? video.publishAt : null,
-        platformOptions: video.platformOptions,
-      })
-
-      await this.publishedVideoRepository.markUploaded(video.organizationId, video.id, result.platformVideoId, result.status, result.publishId)
-
-      if (result.pendingManualAction) {
-        const notification = await this.notificationRepository.create({
-          organizationId: video.organizationId,
-          type: NotificationType.TikTokDraftReady,
-          data: { sourceId: video.sourceId, seriesId: video.seriesId, tikTokInboxUrl: TIKTOK_STUDIO_URL },
-        })
-        this.notificationPublisher.publish(notification)
-      } else if (result.status !== PublishedVideoStatus.Publishing) {
-        await this.deleteBinaryIfAllPlatformsResolved.execute(video.sourceUploadId)
-        const videoUrl = this.buildPublishedVideoUrl(video.platform, result.platformVideoId)
-        const notification = await this.notificationRepository.create({
-          organizationId: video.organizationId,
-          type: NotificationType.VideoPublished,
-          data: { sourceId: video.sourceId, seriesId: video.seriesId, platform: video.platform, videoUrl },
-        })
-        this.notificationPublisher.publish(notification)
-      }
-    } catch (error) {
-      const reason =
-        error instanceof VideoUploadQuotaExceededError
-          ? 'QuotaExceeded'
-          : error instanceof VideoUploadTokenExpiredError
-            ? 'TokenExpired'
-            : error instanceof VideoUploadRejectedError
-              ? error.message
-              : error instanceof Error
-                ? error.message
-                : 'UnknownError'
-      this.logger.error({ sourceId: video.sourceId, platform: video.platform, reason }, '[BulkUploadOrchestrator] publishOne failed')
-      await this.publishedVideoRepository.markFailed(video.organizationId, video.id)
-      await this.deleteBinaryIfAllPlatformsResolved.execute(video.sourceUploadId)
-      const notification = await this.notificationRepository.create({
-        organizationId: video.organizationId,
-        type: NotificationType.VideoUploadFailed,
-        data: { sourceId: video.sourceId, seriesId: video.seriesId, platform: video.platform, failReason: reason },
-      })
-      this.notificationPublisher.publish(notification)
-    }
-  }
-
-  /**
-   * Agrega a la descripción el link al video largo + offset "2 minutos antes" — solo para
-   * shorts, solo si hay suficiente info para resolverlo. Prioridad: longVideoUrl explícito del
-   * plan original > el largo de la misma serie/plataforma ya publicado en este mismo bulk. Si
-   * no hay ninguno (ej. el short no tiene video largo asociado, o el largo todavía no se
-   * publicó), la metadata se usa sin modificar — no es un error.
-   */
-  private async resolveMetadataWithLongVideoLink(video: PublishedVideo, metadata: YouTubeMetadata): Promise<YouTubeMetadata> {
-    if (video.videoType !== PublishedVideoType.Short || video.longVideoTimestampSec === null) return metadata
-
-    const baseUrl = video.longVideoUrl ?? (await this.findPublishedLongVideoUrlInSeries(video))
-    if (!baseUrl) return metadata
-
-    const link = buildLongVideoLink(video.platform, baseUrl, video.longVideoTimestampSec)
-    return appendLongVideoLink(metadata, link)
-  }
-
-  private async findPublishedLongVideoUrlInSeries(video: PublishedVideo): Promise<string | null> {
-    const longVideo = await this.publishedVideoRepository.findPublishedLongVideoInSeries(video.seriesId, video.platform)
-    return longVideo?.platformVideoId ? this.buildPlatformVideoUrl(video.platform, longVideo.platformVideoId) : null
-  }
-
-  private buildPlatformVideoUrl(platform: VideoPlatform, platformVideoId: string): string {
-    if (platform === VideoPlatform.YouTube) return `https://www.youtube.com/watch?v=${platformVideoId}`
-    return `https://www.tiktok.com/tiktokstudio/upload/post/${platformVideoId}`
-  }
-
-  private buildPublishedVideoUrl(platform: VideoPlatform, platformVideoId: string | null): string | null {
-    return platformVideoId ? this.buildPlatformVideoUrl(platform, platformVideoId) : null
   }
 
   private groupByPlatform(videos: PublishedVideo[]): Map<VideoPlatform, PublishedVideo[]> {

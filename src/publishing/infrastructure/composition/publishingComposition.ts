@@ -39,6 +39,7 @@ import { HandleTikTokWebhookUseCase } from '../../application/use-cases/HandleTi
 import { RetryFailedPublicationsUseCase } from '../../application/use-cases/RetryFailedPublicationsUseCase'
 import { DeleteBinaryIfAllPlatformsResolvedService } from '../../application/services/DeleteBinaryIfAllPlatformsResolvedService'
 import { ReconcileBulkUploadStatusService } from '../../application/services/ReconcileBulkUploadStatusService'
+import { PublishPlatformVideoService } from '../../application/services/PublishPlatformVideoService'
 import { PlatformOAuthController } from '../http/PlatformOAuthController'
 import { PlanBulkUploadController } from '../http/PlanBulkUploadController'
 import { GenerateMetadataController } from '../http/GenerateMetadataController'
@@ -182,9 +183,7 @@ export function buildPublishingModule(
     sourceUploadRepository,
     publishedVideoRepository,
   )
-
-  const bulkUploadOrchestrator = new BulkUploadOrchestrator(
-    bulkUploadRepository,
+  const publishPlatformVideo = new PublishPlatformVideoService(
     sourceUploadRepository,
     binaryReader,
     publishedVideoRepository,
@@ -192,10 +191,22 @@ export function buildPublishingModule(
     credentialResolverByPlatform,
     uploaderByPlatform,
     supportsNativeSchedulingByPlatform,
-    scheduleUploadPlanService,
     notificationRepository,
     notificationPublisher,
     deleteBinaryIfAllPlatformsResolved,
+    reconcileBulkUploadStatus,
+    logger,
+  )
+
+  const bulkUploadOrchestrator = new BulkUploadOrchestrator(
+    bulkUploadRepository,
+    sourceUploadRepository,
+    publishedVideoRepository,
+    supportsNativeSchedulingByPlatform,
+    scheduleUploadPlanService,
+    notificationRepository,
+    notificationPublisher,
+    publishPlatformVideo,
     reconcileBulkUploadStatus,
     logger,
   )
@@ -266,16 +277,7 @@ export function buildPublishingModule(
   const publishScheduledTikTokVideosUseCase = new PublishScheduledVideosUseCase(
     VideoPlatform.TikTok,
     publishedVideoRepository,
-    sourceUploadRepository,
-    binaryReader,
-    tikTokCredentialResolver,
-    tikTokUploader,
-    contentRevisionRepository,
-    notificationRepository,
-    notificationPublisher,
-    deleteBinaryIfAllPlatformsResolved,
-    reconcileBulkUploadStatus,
-    logger,
+    publishPlatformVideo,
   )
 
   return {
