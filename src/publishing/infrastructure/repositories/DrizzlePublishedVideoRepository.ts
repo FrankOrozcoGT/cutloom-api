@@ -165,6 +165,12 @@ export class DrizzlePublishedVideoRepository implements PublishedVideoRepository
     return rows.map(toEntity)
   }
 
+  async findBySourceIds(sourceIds: string[]): Promise<PublishedVideo[]> {
+    if (sourceIds.length === 0) return []
+    const rows = await this.conn.select().from(publishedVideos).where(inArray(publishedVideos.sourceId, sourceIds))
+    return rows.map(toEntity)
+  }
+
   async assignScheduleAndStartPublishing(
     id: string,
     publishAt: Date | null,

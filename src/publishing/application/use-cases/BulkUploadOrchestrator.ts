@@ -112,8 +112,15 @@ export class BulkUploadOrchestrator {
     const videosByPlatform = this.groupByPlatform(awaitingVideos)
 
     for (const [platform, videos] of videosByPlatform) {
+      let readyToPublish: PublishedVideo[]
       try {
-        await this.publishedVideoRepository.withOrganizationLock(bulkUpload.organizationId, async () => {
+        // withOrganizationLock sostiene una transacción Postgres real (advisory lock liberado
+        // solo al commit) — por eso acá adentro solo se calcula el calendario y se transiciona
+        // estado en BD, nunca se llama a publishOne (streaming de hasta 20GB a la plataforma):
+        // eso mantendría la transacción abierta durante toda la subida y agotaría el pool bajo
+        // pocas subidas concurrentes. Los videos que quedan listos para publicar ahora mismo se
+        // acumulan y se procesan recién después de que el lock ya se liberó.
+        readyToPublish = await this.publishedVideoRepository.withOrganizationLock(bulkUpload.organizationId, async () => {
           const occupyingSlots = await this.publishedVideoRepository.findOccupyingSlotsByOrganizationId(
             bulkUpload.organizationId,
             platform,
@@ -139,6 +146,7 @@ export class BulkUploadOrchestrator {
           )
 
           const supportsNativeScheduling = this.supportsNativeSchedulingByPlatform[platform]
+          const scheduledReadyToPublish: PublishedVideo[] = []
           for (const video of videos) {
             const publishAt = publishAtBySourceId.get(video.sourceId) ?? null
             // Sin scheduling nativo y con fecha futura: el intento real lo hace el cron de
@@ -149,9 +157,10 @@ export class BulkUploadOrchestrator {
               publishAt && !supportsNativeScheduling ? PublishedVideoStatus.Scheduled : PublishedVideoStatus.Publishing
             const scheduled = await this.publishedVideoRepository.assignScheduleAndStartPublishing(video.id, publishAt, nextStatus)
             if (nextStatus === PublishedVideoStatus.Publishing) {
-              await this.publishOne(scheduled)
+              scheduledReadyToPublish.push(scheduled)
             }
           }
+          return scheduledReadyToPublish
         })
       } catch (error) {
         if (!(error instanceof ScheduleCapacityExceededError)) throw error
@@ -162,6 +171,11 @@ export class BulkUploadOrchestrator {
           data: { seriesId: bulkUpload.seriesId },
         })
         this.notificationPublisher.publish(notification)
+        continue
+      }
+
+      for (const video of readyToPublish) {
+        await this.publishOne(video)
       }
     }
 

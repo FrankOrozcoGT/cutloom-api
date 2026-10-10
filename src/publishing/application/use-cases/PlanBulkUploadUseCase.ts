@@ -1,4 +1,4 @@
-import { PublishedVideoType, VideoPlatform, blocksNewAttempt, isUploaded } from '../../domain/entities/PublishedVideo'
+import { PublishedVideoType, VideoPlatform, blocksNewAttempt, isUploaded, type PublishedVideo } from '../../domain/entities/PublishedVideo'
 import { SourceUploadStatus } from '../../domain/entities/SourceUpload'
 import type { BulkUploadRepository } from '../../domain/ports/BulkUploadRepository'
 import type { SourceUploadRepository } from '../../domain/ports/SourceUploadRepository'
@@ -137,11 +137,31 @@ export class PlanBulkUploadUseCase {
     const uploads: PlanBulkUploadUploadUrl[] = []
     const awaitingUploadInputs: CreateAwaitingUploadInput[] = []
 
+    // Bulk upfront en vez de 1-3 queries por item dentro del loop (hasta MAX_VIDEOS_PER_BULK
+    // items): mismo resultado, una sola consulta por fuente de datos.
+    const sourceIds = input.items.map((item) => item.sourceId)
+    const allVideosBySourceId = new Map<string, PublishedVideo[]>()
+    for (const video of await this.publishedVideoRepository.findBySourceIds(sourceIds)) {
+      const list = allVideosBySourceId.get(video.sourceId) ?? []
+      list.push(video)
+      allVideosBySourceId.set(video.sourceId, list)
+    }
+    const existingSourceUploadBySourceId = new Map(
+      (await this.sourceUploadRepository.findByBulkUploadId(bulkUpload.id)).map((sourceUpload) => [sourceUpload.sourceId, sourceUpload]),
+    )
+    const existingSourceUploadIds = [...existingSourceUploadBySourceId.values()].map((sourceUpload) => sourceUpload.id)
+    const videosBySourceUploadId = new Map<string, VideoPlatform[]>()
+    for (const video of await this.publishedVideoRepository.findBySourceUploadIds(existingSourceUploadIds)) {
+      const list = videosBySourceUploadId.get(video.sourceUploadId) ?? []
+      list.push(video.platform)
+      videosBySourceUploadId.set(video.sourceUploadId, list)
+    }
+
     for (const item of input.items) {
       // Busca por sourceId sin filtrar status y SIN importar de qué bulk venga — detecta tanto
       // filas del bulk actual (resumir) como de cualquier bulk anterior (ej. los legacy
       // migrados antes de que existiera el concepto de bulk).
-      const allVideosForSourceId = await this.publishedVideoRepository.findBySourceId(item.sourceId)
+      const allVideosForSourceId = allVideosBySourceId.get(item.sourceId) ?? []
 
       // Para el frontend: SOLO Uploaded cuenta como "ya subido" de verdad — Scheduled/Publishing/
       // Inbox son trabajo en curso, no publicación confirmada (ver isUploaded).
@@ -156,11 +176,11 @@ export class PlanBulkUploadUseCase {
         allVideosForSourceId.filter((video) => blocksNewAttempt(video.status)).map((video) => video.platform),
       )
 
-      const existingSourceUpload = await this.sourceUploadRepository.findByBulkUploadIdAndSourceId(bulkUpload.id, item.sourceId)
+      const existingSourceUpload = existingSourceUploadBySourceId.get(item.sourceId) ?? null
       // Plataformas que ya tienen una fila AwaitingUpload en ESTE sourceUpload — ya existe el
       // registro en BD (de un intento anterior de este mismo bulk), no hay que recrearlo.
       const alreadyCreatedPlatforms = existingSourceUpload
-        ? new Set((await this.publishedVideoRepository.findBySourceUploadId(existingSourceUpload.id)).map((video) => video.platform))
+        ? new Set(videosBySourceUploadId.get(existingSourceUpload.id) ?? [])
         : new Set<VideoPlatform>()
 
       // Plataformas de ESTE plan que todavía necesitan el binario — excluye las bloqueadas

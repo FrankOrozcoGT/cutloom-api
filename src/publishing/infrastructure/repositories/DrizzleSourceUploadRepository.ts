@@ -44,15 +44,6 @@ export class DrizzleSourceUploadRepository implements SourceUploadRepository {
     return row ? toEntity(row) : null
   }
 
-  async findByBulkUploadIdAndSourceId(bulkUploadId: string, sourceId: string): Promise<SourceUpload | null> {
-    const [row] = await this.db
-      .select()
-      .from(sourceUploads)
-      .where(and(eq(sourceUploads.bulkUploadId, bulkUploadId), eq(sourceUploads.sourceId, sourceId)))
-      .limit(1)
-    return row ? toEntity(row) : null
-  }
-
   async findByBulkUploadId(bulkUploadId: string): Promise<SourceUpload[]> {
     const rows = await this.db.select().from(sourceUploads).where(eq(sourceUploads.bulkUploadId, bulkUploadId))
     return rows.map(toEntity)

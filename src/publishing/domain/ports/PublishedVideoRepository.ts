@@ -62,6 +62,8 @@ export interface PublishedVideoRepository {
    * representa un intento ya resuelto o en curso que no se debe duplicar.
    */
   findBySourceId(sourceId: string): Promise<PublishedVideo[]>
+  /** Versión bulk de findBySourceId — una sola query para todos los sourceId de un plan en vez de N llamadas en loop (ver PlanBulkUploadUseCase). */
+  findBySourceIds(sourceIds: string[]): Promise<PublishedVideo[]>
   /**
    * Transición AwaitingUpload -> Publishing o AwaitingUpload -> Scheduled, fijando el publishAt
    * ya calculado por ScheduleUploadPlanService — se llama una vez que TODOS los SourceUpload de
