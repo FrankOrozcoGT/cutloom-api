@@ -25,7 +25,9 @@ export class SenseVoiceProcessManager {
 
   constructor(private readonly config: SenseVoiceProcessManagerConfig) {}
 
-  async analyze(audioBuffer: Buffer): Promise<{ emotion: string | undefined }> {
+  async analyze(
+    audioBuffer: Buffer,
+  ): Promise<{ emotion: string | undefined; cpuTimeMicros?: number; peakMemoryBytes?: number }> {
     this.clearIdleTimer()
     const child = this.getChild()
     const id = randomUUID()
@@ -42,7 +44,11 @@ export class SenseVoiceProcessManager {
       if (response.error) {
         throw new Error(`SenseVoice worker error: ${response.error}`)
       }
-      return { emotion: response.emotion }
+      return {
+        emotion: response.emotion,
+        cpuTimeMicros: response.cpuTimeMicros,
+        peakMemoryBytes: response.peakMemoryBytes,
+      }
     } finally {
       this.scheduleIdleShutdown()
     }

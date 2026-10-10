@@ -52,6 +52,15 @@ export interface SenseVoiceWorkerResponse {
   id: string
   emotion?: string
   error?: string
+  /** CPU-tiempo real (user+system, microsegundos) consumido por ESTE request puntual —
+   * medido con process.cpuUsage() dentro del propio worker, antes/después de decode+getResult,
+   * porque el trabajo pesado corre en este proceso hijo, no en el padre (ver
+   * SenseVoiceProcessManager). Ausente si la request falló antes de llegar a decodificar. */
+  cpuTimeMicros?: number
+  /** Memoria residente pico del proceso en el momento de responder (maxRSS vía
+   * process.resourceUsage(), bytes) — snapshot puntual, no exclusivo de este request si el
+   * worker ya procesó otras requests antes (ver idleTimeoutMs: se mata entre lotes de trabajo). */
+  peakMemoryBytes?: number
 }
 
 // SenseVoice puede devolver esta categoría cuando no logra clasificar la emoción con
@@ -99,6 +108,7 @@ function getRecognizer(modelPath: string, tokensPath: string): SherpaOnnxOffline
 async function handleRequest(req: SenseVoiceWorkerRequest): Promise<SenseVoiceWorkerResponse> {
   const tmpDir = await mkdtemp(join(tmpdir(), 'shorts-audio-'))
   const wavPath = join(tmpDir, `${randomUUID()}.wav`)
+  const cpuUsageBefore = process.cpuUsage()
   try {
     await writeFile(wavPath, Buffer.from(req.audioBase64, 'base64'))
 
@@ -110,7 +120,13 @@ async function handleRequest(req: SenseVoiceWorkerRequest): Promise<SenseVoiceWo
     const result = rec.getResult(stream)
 
     console.error(`[SenseVoiceWorker] rawEmotion=${JSON.stringify(result.emotion)}`)
-    return { id: req.id, emotion: extractEmotionTag(result.emotion ?? '') }
+    const cpuUsageAfter = process.cpuUsage(cpuUsageBefore)
+    return {
+      id: req.id,
+      emotion: extractEmotionTag(result.emotion ?? ''),
+      cpuTimeMicros: cpuUsageAfter.user + cpuUsageAfter.system,
+      peakMemoryBytes: process.resourceUsage().maxRSS * 1024, // maxRSS viene en KB en Linux
+    }
     // Nota: cuando extractEmotionTag devuelve undefined (EMO_UNKNOWN), el campo
     // "emotion" queda ausente de la respuesta — SenseVoiceProcessManager lo trata igual
     // que si no hubiera emoción detectada, ver su tipo SenseVoiceWorkerResponse.

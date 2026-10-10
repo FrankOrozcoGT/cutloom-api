@@ -10,7 +10,9 @@ import type { DetectedShortCandidate } from './DetectShortsUseCase'
 import type { Logger } from '../../../shared/domain/ports/Logger'
 
 const MAX_CLIPS = 30
-const MAX_CLIP_SECONDS = 180
+// start/end de DetectedShortCandidate están en milisegundos (confirmado contra el payload real
+// del frontend — ver domain/minutes.ts).
+const MAX_CLIP_MILLISECONDS = 180_000
 
 export class EmptyCandidatesError extends Error {
   constructor() {
@@ -28,7 +30,7 @@ export class TooManyClipsError extends Error {
 
 export class InvalidAudioSegmentError extends Error {
   constructor(start: number, end: number) {
-    super(`Invalid audio segment duration for clip [${start}, ${end}] (max ${MAX_CLIP_SECONDS}s)`)
+    super(`Invalid audio segment duration for clip [${start}, ${end}] (max ${MAX_CLIP_MILLISECONDS}ms)`)
     this.name = 'InvalidAudioSegmentError'
   }
 }
@@ -86,7 +88,7 @@ export class ScoreShortsUseCase {
     const candidateById = new Map(input.candidates.map((c) => [c.id, c]))
     for (const clip of input.audioClips) {
       const candidate = candidateById.get(clip.candidateId)
-      if (!candidate || candidate.end - candidate.start > MAX_CLIP_SECONDS || candidate.end <= candidate.start) {
+      if (!candidate || candidate.end - candidate.start > MAX_CLIP_MILLISECONDS || candidate.end <= candidate.start) {
         throw new InvalidAudioSegmentError(candidate?.start ?? 0, candidate?.end ?? 0)
       }
     }
@@ -99,7 +101,7 @@ export class ScoreShortsUseCase {
 
     const warnings: string[] = []
 
-    const emotionByCandidate = await this.analyzeEmotions(input.candidates, input.audioClips, warnings)
+    const emotionByCandidate = await this.analyzeEmotions(input.organizationId, input.candidates, input.audioClips, warnings)
 
     const candidatesForScoring: CandidateForScoring[] = input.candidates.map((candidate, index) => ({
       index,
@@ -138,6 +140,7 @@ export class ScoreShortsUseCase {
   }
 
   private async analyzeEmotions(
+    organizationId: string,
     candidates: DetectedShortCandidate[],
     audioClips: AudioClipForShort[],
     warnings: string[],
@@ -157,7 +160,22 @@ export class ScoreShortsUseCase {
           return undefined
         }
         try {
-          const { emotion } = await this.emotionAnalyzerPort.analyze(clip.audioBuffer)
+          const { emotion, cpuTimeMicros, peakMemoryBytes } = await this.emotionAnalyzerPort.analyze(clip.audioBuffer)
+          // Cómputo local (sherpa-onnx), no LLM: provider/model/tokens quedan en 0/'' —
+          // el costo real de esta fila se deriva de cpuTimeMicros contra infraCostConfig,
+          // no de promptTokens/completionTokens (ver AuthorizeFeatureUsageUseCase).
+          await this.usageEventService.record({
+            organizationId,
+            feature: 'analyze_emotion',
+            provider: 'sherpa-onnx',
+            model: 'sense-voice',
+            promptTokens: 0,
+            completionTokens: 0,
+            cost: null,
+            metadata: { feature: 'analyze_emotion' },
+            cpuTimeMicros,
+            peakMemoryBytes,
+          })
           return emotion
         } catch (error) {
           this.logger.error(

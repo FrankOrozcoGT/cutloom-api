@@ -21,6 +21,7 @@ import type { UsageEventRepository } from '../../domain/ports/UsageEventReposito
 export interface ShortsModule {
   controller: ShortsController
   usageEventRepository: UsageEventRepository
+  usageEventService: UsageEventService
 }
 
 export function buildShortsModule(
@@ -84,5 +85,5 @@ export function buildShortsModule(
 
   const controller = new ShortsController(improveSubtitlesUseCase, detectShortsUseCase, scoreShortsUseCase)
 
-  return { controller, usageEventRepository }
+  return { controller, usageEventRepository, usageEventService }
 }

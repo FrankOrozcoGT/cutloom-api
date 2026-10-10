@@ -13,6 +13,8 @@ function toEvent(row: typeof usageEvents.$inferSelect): UsageEvent {
     completionTokens: row.completionTokens,
     cost: row.cost,
     metadata: row.metadata,
+    cpuTimeMicros: row.cpuTimeMicros,
+    peakMemoryBytes: row.peakMemoryBytes,
   }
 }
 
@@ -29,6 +31,8 @@ export class DrizzleUsageEventRepository implements UsageEventRepository {
       completionTokens: event.completionTokens,
       cost: event.cost,
       metadata: event.metadata,
+      cpuTimeMicros: event.cpuTimeMicros ?? null,
+      peakMemoryBytes: event.peakMemoryBytes ?? null,
     })
   }
 

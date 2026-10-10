@@ -9,6 +9,9 @@ export interface RecordUsageInput {
   completionTokens: number
   cost: number | null
   metadata: UsageEventMetadata
+  /** Cómputo local (ver SenseVoiceProcessManager) — omitir en eventos de LLM puro. */
+  cpuTimeMicros?: number | null
+  peakMemoryBytes?: number | null
 }
 
 /**
@@ -29,6 +32,8 @@ export class UsageEventService {
         completionTokens: input.completionTokens,
         cost: input.cost,
         metadata: input.metadata,
+        cpuTimeMicros: input.cpuTimeMicros ?? null,
+        peakMemoryBytes: input.peakMemoryBytes ?? null,
       })
     } catch (error) {
       console.error('Failed to record usage event', { feature: input.feature, error })
