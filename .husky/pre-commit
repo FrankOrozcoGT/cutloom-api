@@ -13,4 +13,39 @@ if ! command -v bun >/dev/null 2>&1; then
 	exit 1
 fi
 
+# Carpetas demasiado genéricas: acaban siendo un cajón de sastre y siempre hay una forma mejor de ubicar el código.
+
+# "scripts": la carpeta no puede existir.
+# (`|| true` en los grep: husky corre el hook con `sh -e` y grep sale con 1 cuando no encuentra nada, que aquí es el caso bueno)
+SCRIPTS=$(git ls-files --cached | grep -E '(^|/)scripts/' || true)
+if [ -n "$SCRIPTS" ]; then
+  echo "$SCRIPTS"
+  echo ""
+  echo "Commit bloqueado: la carpeta 'scripts' es demasiado genérica y no debe existir. Mira bien cómo hacerlo:"
+  echo "un comando de mantenimiento va como script de package.json o como comando de la app, y lo demás"
+  echo "junto al dominio que lo usa, con un nombre que diga qué hace."
+  exit 1
+fi
+
+# "utils": se puede tocar solo si su marca BAJA, es decir, si entre todas las carpetas utils queda menos código que en HEAD.
+UTILS_TOUCHED=$(git diff --cached --name-only | grep -E '(^|/)utils/' || true)
+if [ -n "$UTILS_TOUCHED" ]; then
+  BEFORE=$(git ls-tree -r --name-only HEAD | grep -E '(^|/)utils/' | while read -r f; do git show "HEAD:$f" | wc -l; done | awk '{s+=$1} END {print s+0}')
+  AFTER=$(git ls-files --cached | grep -E '(^|/)utils/' | while read -r f; do git show ":$f" | wc -l; done | awk '{s+=$1} END {print s+0}')
+  if [ "$AFTER" -ge "$BEFORE" ]; then
+    echo "$UTILS_TOUCHED"
+    echo ""
+    echo "Commit bloqueado: tocaste 'utils' y su marca no bajó ($BEFORE líneas en HEAD, $AFTER después)."
+    echo "'utils' es demasiado genérica: busca cómo meter lo que tocas bien en la arquitectura (en el dominio que lo usa)."
+    echo "Bajar significa que 'utils' tenga cada vez menos código: saca de ahí al menos tanto como agregas."
+    exit 1
+  fi
+fi
+
 bunx lint-staged
+bunx tsc --noEmit -p .
+
+# Código muerto (knip) y dependencias circulares (madge): el proyecto entero debe estar limpio, no solo lo que tocas,
+# porque quitar un uso en un archivo deja sin uso un export en otro. Si fallan, arréglalo en el mismo commit.
+bun run knip
+bun run circular

@@ -17,6 +17,13 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': 'error',
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'ImportExpression',
+          message: 'Imports dinámicos no están permitidos — usa un import estático en el tope del archivo.',
+        },
+      ],
     },
   },
 )
