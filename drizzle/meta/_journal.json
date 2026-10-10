@@ -78,6 +78,34 @@
       "when": 1789414114920,
       "tag": "0010_thin_stellaris",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791040197081,
+      "tag": "0011_fast_caretaker",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791049439440,
+      "tag": "0012_supreme_firedrake",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791083072275,
+      "tag": "0013_fuzzy_nekra",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1791164647802,
+      "tag": "0014_serious_inhumans",
+      "breakpoints": true
     }
   ]
 }
