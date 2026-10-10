@@ -1,5 +1,15 @@
-import { YouTubeVideoType } from '../../domain/entities/YouTubeVideo'
-import type { YouTubeVideo } from '../../domain/entities/YouTubeVideo'
+/** Discriminante genérico de tipo de pieza — el mismo concepto en cualquier plataforma (largo vs short), sin acoplarse al enum de dominio de PublishedVideo. */
+export const SchedulePieceType = {
+  Long: 'long',
+  Short: 'short',
+} as const
+export type SchedulePieceType = (typeof SchedulePieceType)[keyof typeof SchedulePieceType]
+
+/** Forma mínima que cualquier plataforma debe poder proyectar desde PublishedVideo para participar del cálculo de calendario — el servicio no conoce ni depende de la entidad real. */
+export interface ScheduleOccupyingItem {
+  publishAt: Date | null
+  createdAt: Date
+}
 
 /** Techo total de piezas (largos + shorts) que el canal admite por semana — ver investigación de cadencia 3-5/semana. */
 const WEEKLY_SLOT_CAP = 5
@@ -19,7 +29,7 @@ export type SlotTimeWindow = (typeof SlotTimeWindow)[keyof typeof SlotTimeWindow
 
 export interface ScheduleSlotItem {
   sourceId: string
-  videoType: YouTubeVideoType
+  videoType: SchedulePieceType
   /**
    * Prioridad relativa (0-1) que decide el orden dentro de la fase fuerte/débil — mayor
    * prioridad va primero. Concepto propio de publishing, sin conocer de dónde sale el valor
@@ -59,10 +69,10 @@ export class ScheduleCapacityExceededError extends Error {
  * calendarización para el razonamiento detrás de cada regla.
  */
 export class ScheduleUploadPlanService {
-  plan(input: ScheduleUploadPlanInput, alreadyScheduled: YouTubeVideo[]): ScheduledSlot[] {
-    const longItem = input.items.find((item) => item.videoType === YouTubeVideoType.Long)
+  plan(input: ScheduleUploadPlanInput, alreadyScheduled: ScheduleOccupyingItem[]): ScheduledSlot[] {
+    const longItem = input.items.find((item) => item.videoType === SchedulePieceType.Long)
     const shortItems = input.items
-      .filter((item) => item.videoType === YouTubeVideoType.Short)
+      .filter((item) => item.videoType === SchedulePieceType.Short)
       .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
 
     const occupiedWeeks = this.occupiedSlotsByWeek(alreadyScheduled, input.timeZone)
@@ -135,7 +145,7 @@ export class ScheduleUploadPlanService {
     throw new ScheduleCapacityExceededError()
   }
 
-  private occupiedSlotsByWeek(alreadyScheduled: YouTubeVideo[], timeZone: string): Map<number, number> {
+  private occupiedSlotsByWeek(alreadyScheduled: ScheduleOccupyingItem[], timeZone: string): Map<number, number> {
     const map = new Map<number, number>()
     for (const video of alreadyScheduled) {
       // publishAt es null en publicación inmediata (Uploading/Uploaded) — esa pieza ya ocupó
