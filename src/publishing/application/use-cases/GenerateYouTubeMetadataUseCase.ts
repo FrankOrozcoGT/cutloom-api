@@ -2,15 +2,24 @@ import type { ContentRevision } from '../../domain/entities/ContentRevision'
 import type { ContentRevisionRepository } from '../../domain/ports/ContentRevisionRepository'
 import type { MetadataGenerator } from '../../domain/ports/MetadataGenerator'
 import type { PublishingFeatureAuthorizer } from '../../domain/ports/PublishingFeatureAuthorizer'
-import { YouTubeMetadataPromptBuilder, type VideoContext } from '../services/YouTubeMetadataPromptBuilder'
+import type { UsageEventRecorder } from '../../domain/ports/UsageEventRecorder'
+import { YouTubeMetadataPromptBuilder, type VideoContext, type VideoContextSubtitle } from '../services/YouTubeMetadataPromptBuilder'
 import type { Logger } from '../../../shared/domain/ports/Logger'
 
 const YOUTUBE_AI_FEATURE = 'youtube_ai'
 
-export class MissingTopicError extends Error {
+/** Minutos del video cubiertos por los subtítulos de contexto, redondeados hacia arriba — mismo
+ * algoritmo que shorts-intelligence/domain/minutes.ts, copiado en vez de importado porque
+ * publishing no depende de ese bounded context. */
+function totalContextMinutes(subtitles: VideoContextSubtitle[]): number {
+  const totalSeconds = subtitles.reduce((sum, s) => sum + Math.max(0, s.end - s.start), 0)
+  return Math.max(1, Math.ceil(totalSeconds / 60))
+}
+
+export class MissingSubtitlesError extends Error {
   constructor() {
-    super('"topic" is required when context.summary is not provided — nothing to infer the video theme from')
-    this.name = 'MissingTopicError'
+    super('"context.subtitles" is required — generating metadata without the actual video content is not supported')
+    this.name = 'MissingSubtitlesError'
   }
 }
 
@@ -21,7 +30,7 @@ export interface GenerateYouTubeMetadataInput {
   topic?: string
   tone?: string
   additionalInstructions?: string
-  context?: VideoContext
+  context: VideoContext & { subtitles: VideoContextSubtitle[] }
   /** Feedback del editor sobre la revisión anterior — si se omite, se genera desde cero (o desde la última revisión existente, si la hay). */
   feedback?: string
 }
@@ -32,18 +41,20 @@ export class GenerateYouTubeMetadataUseCase {
     private readonly metadataGenerator: MetadataGenerator,
     private readonly promptBuilder: YouTubeMetadataPromptBuilder,
     private readonly contentRevisionRepository: ContentRevisionRepository,
+    private readonly usageEventRecorder: UsageEventRecorder,
     private readonly logger: Logger,
   ) {}
 
   async execute(input: GenerateYouTubeMetadataInput): Promise<ContentRevision> {
-    if (!input.topic && !input.context?.summary) {
-      throw new MissingTopicError()
+    if (input.context.subtitles.length === 0) {
+      throw new MissingSubtitlesError()
     }
 
     this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] requireEntitlement starting')
     await this.featureAuthorizer.requireEntitlement({
       organizationId: input.organizationId,
       feature: YOUTUBE_AI_FEATURE,
+      amount: totalContextMinutes(input.context.subtitles),
     })
     this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] requireEntitlement completed')
 
@@ -60,8 +71,17 @@ export class GenerateYouTubeMetadataUseCase {
     })
 
     this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] metadataGenerator.generate starting')
-    const { metadata } = await this.metadataGenerator.generate(prompt)
+    const { metadata, usage } = await this.metadataGenerator.generate(prompt)
     this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] metadataGenerator.generate completed')
+
+    await this.usageEventRecorder.record({
+      organizationId: input.organizationId,
+      feature: YOUTUBE_AI_FEATURE,
+      provider: 'deepseek',
+      model: 'deepseek-v4-flash',
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+    })
 
     this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] contentRevisionRepository.create starting')
     const revision = await this.contentRevisionRepository.create({
