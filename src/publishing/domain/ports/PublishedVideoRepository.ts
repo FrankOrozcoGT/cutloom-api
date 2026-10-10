@@ -50,6 +50,8 @@ export interface PublishedVideoRepository {
   createManyAwaitingUpload(inputs: CreateAwaitingUploadInput[]): Promise<PublishedVideo[]>
   /** Todos los published_videos (de cualquier plataforma) que referencian este SourceUpload — se resuelve cuando un archivo individual termina de subir, para saber a qué plataformas corresponde publicarlo, o al resumir un plan para no duplicar filas ya creadas (ver planBulkUpload). */
   findBySourceUploadId(sourceUploadId: string): Promise<PublishedVideo[]>
+  /** Versión bulk de findBySourceUploadId — una sola query para todos los SourceUpload de un bulk en vez de N llamadas en loop (ver BulkUploadOrchestrator, GetBulkUploadStatusUseCase, ReconcileBulkUploadStatusService, CancelBulkUploadService). */
+  findBySourceUploadIds(sourceUploadIds: string[]): Promise<PublishedVideo[]>
   /**
    * TODOS los registros de este sourceId, sin filtrar por status y SIN importar de qué
    * SourceUpload o bulk vengan — a diferencia de findBySourceUploadId, esto detecta un sourceId
@@ -91,6 +93,8 @@ export interface PublishedVideoRepository {
    * ScheduleUploadPlanService para no violar el techo semanal ni chocar contra series ya en curso.
    */
   findOccupyingSlotsByOrganizationId(organizationId: string, platform: VideoPlatform, now: Date): Promise<PublishedVideo[]>
+  /** El video Long de esta seriesId+platform ya publicado (platformVideoId no nulo) — consulta puntual en vez de traer toda la cola de slots ocupados de la organización para filtrarla en memoria (ver BulkUploadOrchestrator.findPublishedLongVideoUrlInSeries). null si el largo todavía no se publicó o no existe en esta serie/plataforma. */
+  findPublishedLongVideoInSeries(seriesId: string, platform: VideoPlatform): Promise<PublishedVideo | null>
   /** Registros Scheduled cuyo publishAt ya venció, para una plataforma — recorridos por el cron de publicación programada (usado por TikTok; YouTube resuelve scheduling nativo y nunca deja filas Scheduled vencidas para este método). */
   findDueScheduled(platform: VideoPlatform, now: Date): Promise<PublishedVideo[]>
   /** Busca el registro por publishId (solo aplica a plataformas con resolución asíncrona por webhook, ver PublishedVideo.publishId) — usado por HandlePlatformWebhookUseCase para resolver qué registro actualizar sin conocer organizationId de antemano (el webhook no lo trae). null si no existe. */

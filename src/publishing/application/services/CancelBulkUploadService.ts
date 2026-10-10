@@ -23,10 +23,17 @@ export class CancelBulkUploadService {
 
   async cancel(bulk: BulkUpload): Promise<void> {
     const sourceUploads = await this.sourceUploadRepository.findByBulkUploadId(bulk.id)
+    const allVideos = await this.publishedVideoRepository.findBySourceUploadIds(sourceUploads.map((sourceUpload) => sourceUpload.id))
+    const videosBySourceUploadId = new Map<string, typeof allVideos>()
+    for (const video of allVideos) {
+      const list = videosBySourceUploadId.get(video.sourceUploadId) ?? []
+      list.push(video)
+      videosBySourceUploadId.set(video.sourceUploadId, list)
+    }
+
     for (const sourceUpload of sourceUploads) {
       await this.binaryReader.delete(sourceUpload.tusUploadId)
-      const videos = await this.publishedVideoRepository.findBySourceUploadId(sourceUpload.id)
-      for (const video of videos) {
+      for (const video of videosBySourceUploadId.get(sourceUpload.id) ?? []) {
         if (video.status === PublishedVideoStatus.AwaitingUpload) {
           await this.publishedVideoRepository.markFailed(video.organizationId, video.id)
         }

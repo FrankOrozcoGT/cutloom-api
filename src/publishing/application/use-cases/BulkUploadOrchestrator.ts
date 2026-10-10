@@ -58,11 +58,8 @@ export class BulkUploadOrchestrator {
   /** Reintenta todo PublishedVideo Failed de este bulk — a pedido explícito del frontend, nunca automático (ver RetryFailedPublicationsUseCase). */
   async retryFailed(bulkUploadId: string): Promise<void> {
     const sourceUploads = await this.sourceUploadRepository.findByBulkUploadId(bulkUploadId)
-    const failedVideos: PublishedVideo[] = []
-    for (const sourceUpload of sourceUploads) {
-      const videos = await this.publishedVideoRepository.findBySourceUploadId(sourceUpload.id)
-      failedVideos.push(...videos.filter((video) => video.status === PublishedVideoStatus.Failed))
-    }
+    const allVideos = await this.publishedVideoRepository.findBySourceUploadIds(sourceUploads.map((sourceUpload) => sourceUpload.id))
+    const failedVideos = allVideos.filter((video) => video.status === PublishedVideoStatus.Failed)
     if (failedVideos.length === 0) return
 
     await this.bulkUploadRepository.markPublishing(bulkUploadId)
@@ -102,10 +99,7 @@ export class BulkUploadOrchestrator {
     }
 
     const sourceUploads = await this.sourceUploadRepository.findByBulkUploadId(bulkUploadId)
-    const allVideos: PublishedVideo[] = []
-    for (const sourceUpload of sourceUploads) {
-      allVideos.push(...(await this.publishedVideoRepository.findBySourceUploadId(sourceUpload.id)))
-    }
+    const allVideos = await this.publishedVideoRepository.findBySourceUploadIds(sourceUploads.map((sourceUpload) => sourceUpload.id))
     const awaitingVideos = allVideos.filter((video) => video.status === PublishedVideoStatus.AwaitingUpload)
     if (awaitingVideos.length === 0) return
 
@@ -250,11 +244,7 @@ export class BulkUploadOrchestrator {
   }
 
   private async findPublishedLongVideoUrlInSeries(video: PublishedVideo): Promise<string | null> {
-    const siblings = await this.publishedVideoRepository.findOccupyingSlotsByOrganizationId(video.organizationId, video.platform, new Date())
-    const longVideo = siblings.find(
-      (sibling) =>
-        sibling.seriesId === video.seriesId && sibling.videoType === PublishedVideoType.Long && sibling.platformVideoId !== null,
-    )
+    const longVideo = await this.publishedVideoRepository.findPublishedLongVideoInSeries(video.seriesId, video.platform)
     return longVideo?.platformVideoId ? this.buildPlatformVideoUrl(video.platform, longVideo.platformVideoId) : null
   }
 

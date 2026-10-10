@@ -44,15 +44,19 @@ export class GetBulkUploadStatusUseCase {
     }
 
     const sourceUploads = await this.sourceUploadRepository.findByBulkUploadId(bulk.id)
-    const items: BulkUploadItemStatus[] = []
-    for (const sourceUpload of sourceUploads) {
-      const videos = await this.publishedVideoRepository.findBySourceUploadId(sourceUpload.id)
-      items.push({
-        sourceId: sourceUpload.sourceId,
-        uploadStatus: sourceUpload.status,
-        platforms: videos.map((video) => ({ platform: video.platform, status: video.status })),
-      })
+    const allVideos = await this.publishedVideoRepository.findBySourceUploadIds(sourceUploads.map((sourceUpload) => sourceUpload.id))
+    const videosBySourceUploadId = new Map<string, typeof allVideos>()
+    for (const video of allVideos) {
+      const list = videosBySourceUploadId.get(video.sourceUploadId) ?? []
+      list.push(video)
+      videosBySourceUploadId.set(video.sourceUploadId, list)
     }
+
+    const items: BulkUploadItemStatus[] = sourceUploads.map((sourceUpload) => ({
+      sourceId: sourceUpload.sourceId,
+      uploadStatus: sourceUpload.status,
+      platforms: (videosBySourceUploadId.get(sourceUpload.id) ?? []).map((video) => ({ platform: video.platform, status: video.status })),
+    }))
 
     return { bulkUploadId: bulk.id, status: bulk.status, items }
   }

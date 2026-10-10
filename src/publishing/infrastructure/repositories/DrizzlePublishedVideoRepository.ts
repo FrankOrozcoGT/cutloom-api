@@ -1,9 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { and, eq, gt, isNull, lt, ne, or, sql } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import postgres from 'postgres'
 import type { Database } from '../../../shared/infrastructure/db/client'
 import { publishedVideos } from '../db/schema'
 import { PublishedVideo, PublishedVideoStatus } from '../../domain/entities/PublishedVideo'
+import { PublishedVideoType } from '../../domain/entities/PublishedVideo'
 import type { VideoPlatform, PublishedVideoStatus as PublishedVideoStatusType } from '../../domain/entities/PublishedVideo'
 import { ActiveUploadAlreadyExistsError, NestedOrganizationLockError } from '../../domain/ports/PublishedVideoRepository'
 import type {
@@ -127,8 +128,14 @@ export class DrizzlePublishedVideoRepository implements PublishedVideoRepository
           .from(publishedVideos)
           .where(
             and(
-              eq(publishedVideos.platformAccountId, inputs[0]!.platformAccountId),
-              or(...inputs.map((input) => eq(publishedVideos.sourceId, input.sourceId))),
+              or(
+                ...inputs.map((input) =>
+                  and(
+                    eq(publishedVideos.sourceId, input.sourceId),
+                    eq(publishedVideos.platformAccountId, input.platformAccountId),
+                  ),
+                ),
+              ),
               ne(publishedVideos.status, PublishedVideoStatus.Failed),
             ),
           )
@@ -144,6 +151,12 @@ export class DrizzlePublishedVideoRepository implements PublishedVideoRepository
 
   async findBySourceUploadId(sourceUploadId: string): Promise<PublishedVideo[]> {
     const rows = await this.conn.select().from(publishedVideos).where(eq(publishedVideos.sourceUploadId, sourceUploadId))
+    return rows.map(toEntity)
+  }
+
+  async findBySourceUploadIds(sourceUploadIds: string[]): Promise<PublishedVideo[]> {
+    if (sourceUploadIds.length === 0) return []
+    const rows = await this.conn.select().from(publishedVideos).where(inArray(publishedVideos.sourceUploadId, sourceUploadIds))
     return rows.map(toEntity)
   }
 
@@ -239,6 +252,22 @@ export class DrizzlePublishedVideoRepository implements PublishedVideoRepository
         ),
       )
     return rows.map(toEntity)
+  }
+
+  async findPublishedLongVideoInSeries(seriesId: string, platform: VideoPlatform): Promise<PublishedVideo | null> {
+    const [row] = await this.conn
+      .select()
+      .from(publishedVideos)
+      .where(
+        and(
+          eq(publishedVideos.seriesId, seriesId),
+          eq(publishedVideos.platform, platform),
+          eq(publishedVideos.videoType, PublishedVideoType.Long),
+          isNotNull(publishedVideos.platformVideoId),
+        ),
+      )
+      .limit(1)
+    return row ? toEntity(row) : null
   }
 
   async findDueScheduled(platform: VideoPlatform, now: Date): Promise<PublishedVideo[]> {

@@ -18,10 +18,7 @@ export class ReconcileBulkUploadStatusService {
 
   async execute(bulkUploadId: string): Promise<void> {
     const sourceUploads = await this.sourceUploadRepository.findByBulkUploadId(bulkUploadId)
-    const allVideos = []
-    for (const sourceUpload of sourceUploads) {
-      allVideos.push(...(await this.publishedVideoRepository.findBySourceUploadId(sourceUpload.id)))
-    }
+    const allVideos = await this.publishedVideoRepository.findBySourceUploadIds(sourceUploads.map((sourceUpload) => sourceUpload.id))
 
     const anyPending = allVideos.some((video) => PENDING_STATUSES.includes(video.status))
     if (anyPending) return
