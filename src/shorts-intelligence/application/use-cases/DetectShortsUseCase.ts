@@ -4,6 +4,7 @@ import { ShortPromptBuilder, type ShortIdealJson } from '../services/ShortPrompt
 import type { UsageEventService } from '../services/UsageEventService'
 import { DEEPSEEK_MODEL, EmptySegmentsError, SHORTS_AI_FEATURE } from '../../domain/constants'
 import { totalMinutes } from '../../domain/minutes'
+import { UsageEventFeature } from '../../domain/ports/UsageEventRepository'
 
 export class ShortsLlmFailedError extends Error {
   constructor(cause?: unknown) {
@@ -67,13 +68,13 @@ export class DetectShortsUseCase {
 
     await this.usageEventService.record({
       organizationId: input.organizationId,
-      feature: 'detect_shorts',
+      feature: UsageEventFeature.DetectShorts,
       provider: 'deepseek',
       model: DEEPSEEK_MODEL,
       promptTokens: result.usage.promptTokens,
       completionTokens: result.usage.completionTokens,
       cost: null,
-      metadata: { feature: 'detect_shorts', nCandidates: result.shorts.length },
+      metadata: { feature: UsageEventFeature.DetectShorts, nCandidates: result.shorts.length },
     })
 
     const candidates = result.shorts.map((short) => ({ id: crypto.randomUUID(), ...short }))

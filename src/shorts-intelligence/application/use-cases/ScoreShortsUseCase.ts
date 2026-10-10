@@ -5,6 +5,7 @@ import { ShortScorePromptBuilder, type CandidateForScoring } from '../services/S
 import type { ShortIdealJson } from '../services/ShortPromptBuilder'
 import type { UsageEventService } from '../services/UsageEventService'
 import { DEEPSEEK_MODEL, SHORTS_AI_FEATURE } from '../../domain/constants'
+import { UsageEventFeature } from '../../domain/ports/UsageEventRepository'
 import { totalMinutes } from '../../domain/minutes'
 import type { DetectedShortCandidate } from './DetectShortsUseCase'
 import type { Logger } from '../../../shared/domain/ports/Logger'
@@ -48,7 +49,7 @@ export interface ScoreShortsInput {
   audioClips: AudioClipForShort[]
 }
 
-export interface ScoredShort {
+interface ScoredShort {
   start: number
   end: number
   confidence: number
@@ -127,13 +128,13 @@ export class ScoreShortsUseCase {
 
     await this.usageEventService.record({
       organizationId: input.organizationId,
-      feature: 'score_shorts',
+      feature: UsageEventFeature.ScoreShorts,
       provider: 'deepseek',
       model: DEEPSEEK_MODEL,
       promptTokens: scoringUsage?.promptTokens ?? 0,
       completionTokens: scoringUsage?.completionTokens ?? 0,
       cost: null,
-      metadata: { feature: 'score_shorts', nShorts: shorts.length, warnings },
+      metadata: { feature: UsageEventFeature.ScoreShorts, nShorts: shorts.length, warnings },
     })
 
     return { shorts, warnings }
@@ -166,13 +167,13 @@ export class ScoreShortsUseCase {
           // no de promptTokens/completionTokens (ver AuthorizeFeatureUsageUseCase).
           await this.usageEventService.record({
             organizationId,
-            feature: 'analyze_emotion',
+            feature: UsageEventFeature.AnalyzeEmotion,
             provider: 'sherpa-onnx',
             model: 'sense-voice',
             promptTokens: 0,
             completionTokens: 0,
             cost: null,
-            metadata: { feature: 'analyze_emotion' },
+            metadata: { feature: UsageEventFeature.AnalyzeEmotion },
             cpuTimeMicros,
             peakMemoryBytes,
           })

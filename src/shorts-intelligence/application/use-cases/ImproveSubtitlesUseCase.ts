@@ -5,6 +5,7 @@ import { SubtitlePromptBuilder } from '../services/SubtitlePromptBuilder'
 import type { UsageEventService } from '../services/UsageEventService'
 import { ADVANCED_SUBTITLES_FEATURE, DEEPSEEK_MODEL, EmptySegmentsError } from '../../domain/constants'
 import { totalMinutes } from '../../domain/minutes'
+import { UsageEventFeature } from '../../domain/ports/UsageEventRepository'
 
 export class SubtitlesLlmFailedError extends Error {
   constructor(cause?: unknown) {
@@ -65,13 +66,13 @@ export class ImproveSubtitlesUseCase {
 
     await this.usageEventService.record({
       organizationId: input.organizationId,
-      feature: 'improve_subtitles',
+      feature: UsageEventFeature.ImproveSubtitles,
       provider: 'deepseek',
       model: DEEPSEEK_MODEL,
       promptTokens: result.usage.promptTokens,
       completionTokens: result.usage.completionTokens,
       cost: null,
-      metadata: { feature: 'improve_subtitles', nCorrections: correctedSubtitles.length },
+      metadata: { feature: UsageEventFeature.ImproveSubtitles, nCorrections: correctedSubtitles.length },
     })
 
     return { summary: result.summary, correctedSubtitles }

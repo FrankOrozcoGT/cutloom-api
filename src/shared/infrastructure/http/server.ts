@@ -30,6 +30,7 @@ import { registerNotificationRoutes } from './notificationRoutes'
 import { ListNotificationsUseCase } from '../../application/use-cases/ListNotificationsUseCase'
 import { MarkNotificationReadUseCase } from '../../application/use-cases/MarkNotificationReadUseCase'
 import { InMemoryNotificationPublisher } from './InMemoryNotificationPublisher'
+import { UsageEventFeature } from '../../../shorts-intelligence/domain/ports/UsageEventRepository'
 
 
 type RequireEntitlement = (input: { organizationId: string; feature: string; amount: number }) => Promise<void>
@@ -169,7 +170,7 @@ export function buildServer() {
           promptTokens: input.promptTokens,
           completionTokens: input.completionTokens,
           cost: null,
-          metadata: { feature: 'generate_youtube_metadata' },
+          metadata: { feature: UsageEventFeature.GenerateYouTubeMetadata },
         }),
     },
     app.log,
