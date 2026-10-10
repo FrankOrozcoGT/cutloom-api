@@ -1,10 +1,6 @@
 import type { PlanRepository } from '../../domain/ports/PlanRepository'
 import type { SubscriptionInterval } from '../../domain/entities/Plan'
-
-interface PlanFeatureSummary {
-  feature: string
-  usageLimit: number | null
-}
+import type { Feature } from '../../../shared/domain/entities/Feature'
 
 export interface PlanSummary {
   id: string
@@ -12,7 +8,8 @@ export interface PlanSummary {
   amountInCents: number
   currency: string
   interval: SubscriptionInterval
-  features: PlanFeatureSummary[]
+  creditsPerCycle: number
+  features: Feature[]
 }
 
 /** Listado público de planes (pricing page) — sin auth, no expone recurrentePriceId (detalle interno de la pasarela). */
@@ -29,7 +26,8 @@ export class ListPlansUseCase {
       amountInCents: plan.amountInCents,
       currency: plan.currency,
       interval: plan.interval,
-      features: (featuresByPlanId.get(plan.id) ?? []).map((f) => ({ feature: f.feature, usageLimit: f.usageLimit })),
+      creditsPerCycle: plan.creditsPerCycle,
+      features: (featuresByPlanId.get(plan.id) ?? []).map((f) => f.feature),
     }))
   }
 }

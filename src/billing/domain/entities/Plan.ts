@@ -7,6 +7,8 @@ export interface PlanProps {
   amountInCents: number
   currency: string
   interval: SubscriptionInterval
+  /** Créditos acreditados a creditAccount.balance cada vez que se paga este plan — un único pozo total, no por feature. */
+  creditsPerCycle: number
 }
 
 export class Plan {
@@ -38,5 +40,9 @@ export class Plan {
 
   get interval(): SubscriptionInterval {
     return this.props.interval
+  }
+
+  get creditsPerCycle(): number {
+    return this.props.creditsPerCycle
   }
 }

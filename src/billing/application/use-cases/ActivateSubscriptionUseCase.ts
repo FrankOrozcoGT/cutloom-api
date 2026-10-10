@@ -1,4 +1,4 @@
-import type { EntitlementRepository } from '../../domain/ports/EntitlementRepository'
+import type { CreditAccountRepository } from '../../domain/ports/CreditAccountRepository'
 import type { PlanRepository } from '../../domain/ports/PlanRepository'
 import type { SubscriptionRepository } from '../../domain/ports/SubscriptionRepository'
 
@@ -9,6 +9,8 @@ export interface ActivateSubscriptionInput {
   currentPeriodEnd: Date
 }
 
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000
+
 /**
  * Se dispara desde el webhook payment/subscription al confirmarse el primer cobro
  * de una suscripción recién creada (payload de checkout ya vinculado a la
@@ -17,7 +19,7 @@ export interface ActivateSubscriptionInput {
 export class ActivateSubscriptionUseCase {
   constructor(
     private readonly subscriptionRepository: SubscriptionRepository,
-    private readonly entitlementRepository: EntitlementRepository,
+    private readonly creditAccountRepository: CreditAccountRepository,
     private readonly planRepository: PlanRepository,
   ) {}
 
@@ -46,12 +48,23 @@ export class ActivateSubscriptionUseCase {
       currentPeriodEnd: input.currentPeriodEnd,
     })
 
-    // El acceso en sí se deriva en vivo de subscription.status + plan_features (ver
-    // AuthorizeFeatureUsageUseCase) — acá solo se carga el balance del nuevo ciclo.
-    const planFeatures = await this.planRepository.findFeaturesByPlanId(plan.id)
-    await this.entitlementRepository.chargeBalanceForFeatures(
+    // Qué features cubre el plan se deriva en vivo de subscription.status + plan_features (ver
+    // AuthorizeFeatureUsageUseCase) — acá solo se acredita el pozo único de créditos del ciclo.
+    // El primer grant se prorratea a los días reales hasta el próximo corte (currentPeriodEnd,
+    // que Recurrente ya ancla al día 1 — ver billing_cycle_anchor_day en
+    // RecurrentePaymentGatewayProvider.createCheckoutSession), igual trato que el dinero: quien
+    // entra a mitad de mes paga y recibe lo proporcional, nunca el mes completo.
+    const daysUntilNextCycle = Math.max(
+      1,
+      Math.round((input.currentPeriodEnd.getTime() - input.currentPeriodStart.getTime()) / MILLISECONDS_PER_DAY),
+    )
+    const proratedCredits = Math.round((plan.creditsPerCycle * daysUntilNextCycle) / 30)
+
+    await this.creditAccountRepository.grantFromPlan(
       subscription.organizationId,
-      planFeatures.map((f) => ({ feature: f.feature, usageLimit: f.usageLimit })),
+      proratedCredits,
+      subscription.id,
+      input.currentPeriodStart,
     )
   }
 }

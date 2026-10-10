@@ -2,7 +2,7 @@ import type { Database } from '../../../shared/infrastructure/db/client'
 import { readEnv } from '../../../shared/infrastructure/config/readEnv'
 import { DrizzlePlanRepository } from '../repositories/DrizzlePlanRepository'
 import { DrizzleSubscriptionRepository } from '../repositories/DrizzleSubscriptionRepository'
-import { DrizzleEntitlementRepository } from '../repositories/DrizzleEntitlementRepository'
+import { DrizzlePlanFeatureAccessRepository } from '../repositories/DrizzlePlanFeatureAccessRepository'
 import { DrizzleCreditAccountRepository } from '../repositories/DrizzleCreditAccountRepository'
 import { DrizzleFeatureRepository } from '../repositories/DrizzleFeatureRepository'
 import { DrizzleDonationRepository } from '../repositories/DrizzleDonationRepository'
@@ -14,8 +14,8 @@ import { PaymentFailureUseCase } from '../../application/use-cases/PaymentFailur
 import { CancelSubscriptionUseCase } from '../../application/use-cases/CancelSubscriptionUseCase'
 import { ExpireCancelledSubscriptionsUseCase } from '../../application/use-cases/ExpireCancelledSubscriptionsUseCase'
 import { ChangePlanUseCase } from '../../application/use-cases/ChangePlanUseCase'
+import { GrantMonthlyPlanCreditsUseCase } from '../../application/use-cases/GrantMonthlyPlanCreditsUseCase'
 import { TopUpCreditsUseCase } from '../../application/use-cases/TopUpCreditsUseCase'
-import { DeductCreditsUseCase } from '../../application/use-cases/DeductCreditsUseCase'
 import { CreateDonationUseCase } from '../../application/use-cases/CreateDonationUseCase'
 import { RecordDonationUseCase } from '../../application/use-cases/RecordDonationUseCase'
 import { GetSubscriptionStatusUseCase } from '../../application/use-cases/GetSubscriptionStatusUseCase'
@@ -24,16 +24,16 @@ import { AuthorizeFeatureUsageUseCase } from '../../application/use-cases/Author
 import { ListPlansUseCase } from '../../application/use-cases/ListPlansUseCase'
 import { BillingController } from '../http/BillingController'
 import type { WebhookModule } from '../http/webhookRoutes'
-import type { EntitlementRepository } from '../../domain/ports/EntitlementRepository'
+import type { PlanFeatureAccessRepository } from '../../domain/ports/PlanFeatureAccessRepository'
 
 export interface BillingModule {
   controller: BillingController
   webhookModule: WebhookModule
-  deductCreditsUseCase: DeductCreditsUseCase
   createDonationUseCase: CreateDonationUseCase
   expireCancelledSubscriptionsUseCase: ExpireCancelledSubscriptionsUseCase
+  grantMonthlyPlanCreditsUseCase: GrantMonthlyPlanCreditsUseCase
   donationRoutesConfig: { successUrl: string; cancelUrl: string; defaultCurrency: string }
-  entitlementRepository: EntitlementRepository
+  planFeatureAccessRepository: PlanFeatureAccessRepository
   /** Puerto de autorización reutilizable desde otros bounded contexts (ver Unidad de créditos/entitlements). */
   authorizeFeatureUsageUseCase: AuthorizeFeatureUsageUseCase
   getCreditBalanceUseCase: GetCreditBalanceUseCase
@@ -42,7 +42,7 @@ export interface BillingModule {
 export function buildBillingModule(db: Database): BillingModule {
   const planRepository = new DrizzlePlanRepository(db)
   const subscriptionRepository = new DrizzleSubscriptionRepository(db)
-  const entitlementRepository = new DrizzleEntitlementRepository(db)
+  const planFeatureAccessRepository = new DrizzlePlanFeatureAccessRepository(db)
   const creditAccountRepository = new DrizzleCreditAccountRepository(db)
   const featureRepository = new DrizzleFeatureRepository(db)
   const donationRepository = new DrizzleDonationRepository(db)
@@ -68,31 +68,35 @@ export function buildBillingModule(db: Database): BillingModule {
   )
   const activateSubscriptionUseCase = new ActivateSubscriptionUseCase(
     subscriptionRepository,
-    entitlementRepository,
+    creditAccountRepository,
     planRepository,
   )
-  const renewalUseCase = new RenewalUseCase(subscriptionRepository, entitlementRepository, planRepository)
+  const renewalUseCase = new RenewalUseCase(subscriptionRepository, creditAccountRepository, planRepository)
   const paymentFailureUseCase = new PaymentFailureUseCase(subscriptionRepository)
   const cancelSubscriptionUseCase = new CancelSubscriptionUseCase(subscriptionRepository, paymentGatewayProvider)
   const expireCancelledSubscriptionsUseCase = new ExpireCancelledSubscriptionsUseCase(subscriptionRepository)
   const changePlanUseCase = new ChangePlanUseCase(
     subscriptionRepository,
-    entitlementRepository,
+    creditAccountRepository,
     planRepository,
     paymentGatewayProvider,
   )
   const topUpCreditsUseCase = new TopUpCreditsUseCase(
     creditAccountRepository,
     paymentGatewayProvider,
-    Number(readEnv('CREDIT_TOPUP_RATE_CENTS_PER_UNIT', '100')),
+    Number(readEnv('CREDIT_TOPUP_RATE_CENTS_PER_UNIT', '200')),
   )
-  const deductCreditsUseCase = new DeductCreditsUseCase(creditAccountRepository)
+  const grantMonthlyPlanCreditsUseCase = new GrantMonthlyPlanCreditsUseCase(
+    subscriptionRepository,
+    creditAccountRepository,
+    planRepository,
+  )
   const createDonationUseCase = new CreateDonationUseCase(paymentGatewayProvider)
   const recordDonationUseCase = new RecordDonationUseCase(donationRepository)
   const getSubscriptionStatusUseCase = new GetSubscriptionStatusUseCase(subscriptionRepository)
   const getCreditBalanceUseCase = new GetCreditBalanceUseCase(creditAccountRepository)
   const authorizeFeatureUsageUseCase = new AuthorizeFeatureUsageUseCase(
-    entitlementRepository,
+    planFeatureAccessRepository,
     creditAccountRepository,
     featureRepository,
   )
@@ -124,15 +128,15 @@ export function buildBillingModule(db: Database): BillingModule {
       recordDonationUseCase,
       paymentGatewayProvider,
     },
-    deductCreditsUseCase,
     createDonationUseCase,
     expireCancelledSubscriptionsUseCase,
+    grantMonthlyPlanCreditsUseCase,
     donationRoutesConfig: {
       successUrl: `${frontendUrl}/donate/success`,
       cancelUrl: `${frontendUrl}/donate/cancel`,
       defaultCurrency: readEnv('BILLING_DEFAULT_CURRENCY', 'GTQ'),
     },
-    entitlementRepository,
+    planFeatureAccessRepository,
     authorizeFeatureUsageUseCase,
     getCreditBalanceUseCase,
   }

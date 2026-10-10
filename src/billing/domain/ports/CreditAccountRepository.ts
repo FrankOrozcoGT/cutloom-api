@@ -1,4 +1,5 @@
 import type { CreditAccount } from '../entities/CreditAccount'
+import type { Feature } from '../../../shared/domain/entities/Feature'
 
 export class InsufficientCreditsError extends Error {
   constructor(organizationId: string) {
@@ -7,10 +8,27 @@ export class InsufficientCreditsError extends Error {
   }
 }
 
+/**
+ * Único pozo de créditos por organización — financia tanto el consumo cubierto por el plan
+ * (creditsPerCycle) como el crédito comprado aparte (topup); ambos suman al mismo balance, sin
+ * distinción de origen al momento de gastar. El origen de cada movimiento (de dónde vino el
+ * crédito, o para qué se gastó) se audita en el ledger (ver creditLedgerEntries y sus 3 tipos),
+ * nunca en esta tabla — acá solo vive el saldo actual cacheado.
+ */
 export interface CreditAccountRepository {
   findOrCreateByOrganizationId(organizationId: string): Promise<CreditAccount>
-  /** Suma amount al balance (positivo) y registra la transacción; idempotente por checkoutId. */
-  addCredits(organizationId: string, amount: number, recurrenteCheckoutId: string): Promise<CreditAccount>
-  /** Descuenta amount del balance; lanza InsufficientCreditsError si dejaría el balance negativo. */
-  deductCredits(organizationId: string, amount: number, reason: string): Promise<CreditAccount>
+  /** Entrada: acredita creditsPerCycle del plan al activar/renovar/cambiar de plan — idempotente por (subscriptionId, periodStart), ya que subscriptionId es fijo entre ciclos. */
+  grantFromPlan(organizationId: string, amount: number, subscriptionId: string, periodStart: Date): Promise<CreditAccount>
+  /** Entrada: acredita una compra de crédito libre — idempotente por checkoutId. */
+  grantFromTopup(organizationId: string, amount: number, recurrenteCheckoutId: string): Promise<CreditAccount>
+  /** Salida: descuenta por consumo de `feature`; lanza InsufficientCreditsError si dejaría el balance negativo. */
+  deductForUsage(organizationId: string, amount: number, feature: Feature): Promise<CreditAccount>
+  /**
+   * Salida: "lo que no se usó del plan, se pierde" — calcula cuánto quedó sin gastar del
+   * plan_grant correspondiente a `periodStart` (suma de plan_grant de ese mes menos suma de
+   * usage del mismo mes) y lo descuenta del pozo si es positivo. El crédito comprado (topup)
+   * nunca se toca acá. Idempotente por (organizationId, periodStart) — no vuelve a expirar un
+   * mes ya cerrado. Sin efecto si no quedó sobrante.
+   */
+  expireUnusedPlanGrants(organizationId: string, periodStart: Date): Promise<CreditAccount>
 }

@@ -23,4 +23,6 @@ export interface SubscriptionRepository {
   setCancelAtPeriodEnd(id: string, cancelAtPeriodEnd: boolean): Promise<void>
   updatePlan(id: string, planId: string, currentPeriodStart: Date, currentPeriodEnd: Date): Promise<void>
   findExpiredPendingCancellation(now: Date): Promise<Subscription[]>
+  /** Todas las suscripciones con status 'active' — usado por GrantMonthlyPlanCreditsUseCase, recarga mensual independiente del ciclo de cobro de Recurrente. */
+  findAllActive(): Promise<Subscription[]>
 }

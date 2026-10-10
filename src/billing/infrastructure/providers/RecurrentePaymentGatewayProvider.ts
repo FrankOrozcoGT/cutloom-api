@@ -121,7 +121,19 @@ export class RecurrentePaymentGatewayProvider implements PaymentGatewayProvider 
         method: 'POST',
         headers: { 'X-SECRET-KEY': this.config.apiKey, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          items: [{ price_id: plan.recurrentePriceId, quantity: 1 }],
+          items: [
+            {
+              price_id: plan.recurrentePriceId,
+              quantity: 1,
+              // Ancla el cobro recurrente siempre al día 1 del mes, sin importar el día real
+              // de alta — el primer cobro se prorratea a los días restantes hasta esa fecha
+              // (ver docs.recurrente.com/guides-english/guides/subscription-billing-options),
+              // así el ciclo de pago queda alineado con el cron de recarga mensual de créditos
+              // (ver GrantMonthlyPlanCreditsUseCase), que es siempre día 1 para todos.
+              billing_cycle_anchor_day: 1,
+              proration_behavior: 'create_prorations',
+            },
+          ],
           success_url: urls.successUrl,
           cancel_url: urls.cancelUrl,
           metadata: { organizationId, planId: plan.id },

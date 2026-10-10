@@ -1,4 +1,4 @@
-import type { EntitlementRepository } from '../../domain/ports/EntitlementRepository'
+import type { CreditAccountRepository } from '../../domain/ports/CreditAccountRepository'
 import type { PaymentGatewayProvider } from '../../domain/ports/PaymentGatewayProvider'
 import type { PlanRepository } from '../../domain/ports/PlanRepository'
 import type { SubscriptionRepository } from '../../domain/ports/SubscriptionRepository'
@@ -35,7 +35,7 @@ export interface ChangePlanResult {
 export class ChangePlanUseCase {
   constructor(
     private readonly subscriptionRepository: SubscriptionRepository,
-    private readonly entitlementRepository: EntitlementRepository,
+    private readonly creditAccountRepository: CreditAccountRepository,
     private readonly planRepository: PlanRepository,
     private readonly paymentGatewayProvider: PaymentGatewayProvider,
   ) {}
@@ -68,14 +68,14 @@ export class ChangePlanUseCase {
       result.currentPeriodEnd,
     )
 
-    // El acceso en sí se deriva en vivo de subscription.planId (ya actualizado arriba) +
-    // plan_features (ver AuthorizeFeatureUsageUseCase) — no hace falta otorgar ni desactivar
-    // nada acá. Solo se carga el balance de las features del plan nuevo, para que el cambio
-    // de plan no herede balance consumido bajo un tope distinto.
-    const newPlanFeatures = await this.planRepository.findFeaturesByPlanId(newPlan.id)
-    await this.entitlementRepository.chargeBalanceForFeatures(
+    // Qué features cubre el plan se deriva en vivo de subscription.planId (ya actualizado
+    // arriba) + plan_features (ver AuthorizeFeatureUsageUseCase) — acá solo se acredita el pozo
+    // único de créditos del plan nuevo, idempotente por (subscription.id, result.currentPeriodStart).
+    await this.creditAccountRepository.grantFromPlan(
       subscription.organizationId,
-      newPlanFeatures.map((f) => ({ feature: f.feature, usageLimit: f.usageLimit })),
+      newPlan.creditsPerCycle,
+      subscription.id,
+      result.currentPeriodStart,
     )
 
     return {

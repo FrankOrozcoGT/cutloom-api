@@ -1,4 +1,4 @@
-import type { EntitlementRepository } from '../../domain/ports/EntitlementRepository'
+import type { CreditAccountRepository } from '../../domain/ports/CreditAccountRepository'
 import type { PlanRepository } from '../../domain/ports/PlanRepository'
 import type { SubscriptionRepository } from '../../domain/ports/SubscriptionRepository'
 
@@ -13,13 +13,15 @@ export interface RenewalInput {
  * (evento real de Recurrente: intent.succeeded con subscription.id existente).
  * Idempotente: si el periodEnd reportado no es posterior al que ya tenemos,
  * no hace nada (evita doble extensión ante reintentos de entrega del webhook).
- * Un nuevo ciclo también recarga el balance de cada feature a su tope (usageLimit) del
- * plan — el consumo del ciclo anterior no se arrastra.
+ * Un nuevo ciclo también acredita el pozo único de créditos (creditsPerCycle del plan) — el
+ * consumo del ciclo anterior no se arrastra ni se resetea: el pozo es acumulativo, pero cada
+ * ciclo solo acredita una vez (ver CreditAccountRepository.grantFromPlan, idempotente por
+ * subscriptionId+periodStart).
  */
 export class RenewalUseCase {
   constructor(
     private readonly subscriptionRepository: SubscriptionRepository,
-    private readonly entitlementRepository: EntitlementRepository,
+    private readonly creditAccountRepository: CreditAccountRepository,
     private readonly planRepository: PlanRepository,
   ) {}
 
@@ -37,10 +39,16 @@ export class RenewalUseCase {
 
     await this.subscriptionRepository.extendPeriod(subscription.id, input.currentPeriodStart, input.currentPeriodEnd)
 
-    const planFeatures = await this.planRepository.findFeaturesByPlanId(subscription.planId)
-    await this.entitlementRepository.chargeBalanceForFeatures(
+    const plan = await this.planRepository.findById(subscription.planId)
+    if (!plan) {
+      return
+    }
+
+    await this.creditAccountRepository.grantFromPlan(
       subscription.organizationId,
-      planFeatures.map((f) => ({ feature: f.feature, usageLimit: f.usageLimit })),
+      plan.creditsPerCycle,
+      subscription.id,
+      input.currentPeriodStart,
     )
   }
 }

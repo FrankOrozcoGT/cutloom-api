@@ -134,4 +134,9 @@ export class DrizzleSubscriptionRepository implements SubscriptionRepository {
       .where(and(eq(subscriptions.cancelAtPeriodEnd, true), lt(subscriptions.currentPeriodEnd, now)))
     return rows.map(toEntity)
   }
+
+  async findAllActive(): Promise<Subscription[]> {
+    const rows = await this.db.select().from(subscriptions).where(eq(subscriptions.status, 'active'))
+    return rows.map(toEntity)
+  }
 }

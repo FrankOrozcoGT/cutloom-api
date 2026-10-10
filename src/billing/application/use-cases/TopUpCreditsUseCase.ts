@@ -56,6 +56,6 @@ export class TopUpCreditsUseCase {
   /** Invocado desde el webhook tras confirmar el pago único de la recarga. Idempotente por checkoutId. */
   async confirmPayment(input: { organizationId: string; amountInCents: number; recurrenteCheckoutId: string }): Promise<void> {
     const units = Math.floor(input.amountInCents / this.topUpRateCentsPerUnit)
-    await this.creditAccountRepository.addCredits(input.organizationId, units, input.recurrenteCheckoutId)
+    await this.creditAccountRepository.grantFromTopup(input.organizationId, units, input.recurrenteCheckoutId)
   }
 }
