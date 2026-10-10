@@ -1,9 +1,9 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { PlatformOAuthController } from './PlatformOAuthController'
-import type { BulkUploadController } from './BulkUploadController'
+import type { PlanBulkUploadController } from './PlanBulkUploadController'
 import type { GenerateMetadataController } from './GenerateMetadataController'
+import type { TusBulkUploadHandler } from './TusBulkUploadHandler'
 import type { createAuthMiddleware } from '../../../identity/infrastructure/http/authMiddleware'
-import { BULK_UPLOAD_BODY_LIMIT_BYTES } from '../../application/use-cases/BulkUploadVideoUseCase'
 import type { HandleTikTokWebhookUseCase } from '../../application/use-cases/HandleTikTokWebhookUseCase'
 import { verifyTikTokWebhookSignature } from './verifyTikTokWebhookSignature'
 import { isRecord } from '../../../shared/domain/validation'
@@ -23,20 +23,22 @@ function singleHeaderValue(value: string | string[] | undefined): string | undef
   return typeof value === 'string' ? value : undefined
 }
 
+const TUS_UPLOAD_PATH = '/api/publishing/bulk-upload/files'
+
 /**
- * Rutas de publishing bajo /api/publishing. Separadas por responsabilidad en tres controllers
- * (PlatformOAuthController: conexión de cuentas + capabilities; BulkUploadController: subida de
- * videos; GenerateMetadataController: generación de metadata con IA) que comparten el prefix
- * HTTP pero no tienen relación de dominio entre sí — solo generate-metadata y tiktok/capabilities
- * no toman :platform (metadata es IA compartida por sourceId; capabilities es viabilidad
- * específica de TikTok). El webhook solo lo usa TikTok (YouTube no tiene publicación asíncrona
- * que notificar).
+ * Rutas de publishing bajo /api/publishing. Separadas por responsabilidad:
+ * PlatformOAuthController (conexión de cuentas + capabilities), PlanBulkUploadController
+ * (declara el plan de un bulk, sin archivos), TusBulkUploadHandler (protocolo tus para subir
+ * cada binario, enganchado a BulkUploadOrchestrator por eventos — ver ese archivo),
+ * GenerateMetadataController (IA). bulk-upload ya no toma :platform: un mismo bulk puede
+ * publicarse a varias plataformas a la vez (ver PlanBulkUploadUseCase).
  */
 export function registerPublishingRoutes(
   app: FastifyInstance,
   oauthController: PlatformOAuthController,
-  bulkUploadController: BulkUploadController,
+  planBulkUploadController: PlanBulkUploadController,
   generateMetadataController: GenerateMetadataController,
+  tusBulkUploadHandler: TusBulkUploadHandler,
   authMiddleware: ReturnType<typeof createAuthMiddleware>,
   handleTikTokWebhookUseCase: HandleTikTokWebhookUseCase,
   tikTokClientSecret: string,
@@ -63,13 +65,39 @@ export function registerPublishingRoutes(
         (req, reply) => generateMetadataController.generateMetadata(req, reply),
       )
 
-      // multipart/form-data: sin JSON Schema de body (no aplica) — ver BulkUploadController.
-      // Sirve tanto "publicar ahora" como "calendarizar": BulkUploadVideoUseCase decide según
-      // el resultado de ScheduleUploadPlanService y si la plataforma soporta scheduling nativo.
+      // Solo el plan (JSON, sin binarios) — devuelve una URL tus por sourceId. El binario se
+      // sube después, por separado, a TUS_UPLOAD_PATH (ver sub-scope más abajo). Resume un bulk
+      // activo existente si ya hay uno para el mismo seriesId (ver PlanBulkUploadUseCase).
       publishingApp.post(
-        '/:platform/bulk-upload',
-        { preHandler: authMiddleware, bodyLimit: BULK_UPLOAD_BODY_LIMIT_BYTES },
-        (req, reply) => bulkUploadController.bulkUpload(req, reply),
+        '/bulk-upload',
+        { preHandler: authMiddleware },
+        (req, reply) => planBulkUploadController.planBulkUpload(req, reply),
+      )
+
+      // Cancelación explícita a pedido del frontend — distinta de la expiración automática de 7
+      // días (ver ExpireStaleBulkUploadsUseCase). El frontend decide cuándo usarla.
+      publishingApp.delete(
+        '/bulk-upload/:seriesId',
+        { preHandler: authMiddleware },
+        (req, reply) => planBulkUploadController.cancelBulkUpload(req, reply),
+      )
+
+      // Estado real del bulk + cada archivo — para que el frontend decida con datos reales si
+      // continuar o cancelar, sin tener que inferirlo de un código de error.
+      publishingApp.get(
+        '/bulk-upload/:seriesId/status',
+        { preHandler: authMiddleware },
+        (req, reply) => planBulkUploadController.getBulkUploadStatus(req, reply),
+      )
+
+      // A pedido explícito del frontend, desde la vista de un bulk ya terminado de subir —
+      // reintenta solo los PublishedVideo Failed de ese bulk específico (ver
+      // RetryFailedPublicationsUseCase). bulkUploadId, no seriesId: el usuario ya está viendo
+      // un bulk puntual, no hace falta resolver "el bulk activo de esta serie".
+      publishingApp.post(
+        '/bulk-upload/:bulkUploadId/retry-failed',
+        { preHandler: authMiddleware },
+        (req, reply) => planBulkUploadController.retryFailedPublications(req, reply),
       )
 
       publishingApp.get(
@@ -80,8 +108,8 @@ export function registerPublishingRoutes(
 
       // Sub-scope aislado solo para el webhook: este content-type parser (raw string, para
       // poder validar la firma TikTok-Signature con HMAC sobre el body crudo) no debe afectar
-      // al resto de las rutas de este plugin (generate-metadata, bulk-upload), que necesitan el
-      // JSON ya parseado por el parser default de Fastify.
+      // al resto de las rutas de este plugin, que necesitan el JSON ya parseado por el parser
+      // default de Fastify.
       publishingApp.register(
         (webhookApp, _opts, webhookDone) => {
           webhookApp.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, cb) => {
@@ -122,5 +150,22 @@ export function registerPublishingRoutes(
       done()
     },
     { prefix: '/api/publishing' },
+  )
+
+  // Fuera del scope de /api/publishing: el protocolo tus define sus propios content-type
+  // (application/offset+octet-stream) y verbos (PATCH/HEAD con headers Tus-*) — @tus/server
+  // necesita manejar el request/response crudos (req.raw/reply.raw) sin que ningún parser de
+  // Fastify (JSON, multipart) toque el body antes. Registrado en un scope propio, sin
+  // addContentTypeParser ni bodyLimit global que puedan interferir.
+  app.register(
+    (tusApp, _opts, tusDone) => {
+      // Pass-through: NO consumir el body acá — @tus/server necesita leer el stream crudo
+      // directo de request.raw (PATCH con Content-Type application/offset+octet-stream, entre
+      // otros). Sin este parser "vacío" registrado para '*', el parser default de Fastify
+      // consumiría el stream antes de que @tus/server pueda leerlo.
+      tusApp.addContentTypeParser('*', (_req, _payload, done) => done(null))
+      tusBulkUploadHandler.registerRoutes(tusApp, TUS_UPLOAD_PATH)
+      tusDone()
+    },
   )
 }
