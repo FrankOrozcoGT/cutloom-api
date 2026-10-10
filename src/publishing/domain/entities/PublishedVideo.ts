@@ -49,6 +49,17 @@ export function blocksNewAttempt(status: PublishedVideoStatus): boolean {
   return status !== PublishedVideoStatus.AwaitingUpload && status !== PublishedVideoStatus.Failed
 }
 
+/** Único punto que agrupa PublishedVideo[] por su sourceUploadId — evita que cada caller reescriba el mismo Map.get/push/set (ver GetBulkUploadStatusUseCase y CancelBulkUploadService). */
+export function groupBySourceUploadId(videos: PublishedVideo[]): Map<string, PublishedVideo[]> {
+  const map = new Map<string, PublishedVideo[]>()
+  for (const video of videos) {
+    const list = map.get(video.sourceUploadId) ?? []
+    list.push(video)
+    map.set(video.sourceUploadId, list)
+  }
+  return map
+}
+
 /** Determina la franja horaria/día aplicada por ScheduleUploadPlanService — no es solo metadata descriptiva. */
 export const PublishedVideoType = {
   Long: 'long',

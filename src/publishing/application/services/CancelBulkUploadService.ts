@@ -1,4 +1,4 @@
-import { PublishedVideoStatus } from '../../domain/entities/PublishedVideo'
+import { groupBySourceUploadId, PublishedVideoStatus } from '../../domain/entities/PublishedVideo'
 import type { BulkUpload } from '../../domain/entities/BulkUpload'
 import type { BulkUploadRepository } from '../../domain/ports/BulkUploadRepository'
 import type { SourceUploadRepository } from '../../domain/ports/SourceUploadRepository'
@@ -24,12 +24,7 @@ export class CancelBulkUploadService {
   async cancel(bulk: BulkUpload): Promise<void> {
     const sourceUploads = await this.sourceUploadRepository.findByBulkUploadId(bulk.id)
     const allVideos = await this.publishedVideoRepository.findBySourceUploadIds(sourceUploads.map((sourceUpload) => sourceUpload.id))
-    const videosBySourceUploadId = new Map<string, typeof allVideos>()
-    for (const video of allVideos) {
-      const list = videosBySourceUploadId.get(video.sourceUploadId) ?? []
-      list.push(video)
-      videosBySourceUploadId.set(video.sourceUploadId, list)
-    }
+    const videosBySourceUploadId = groupBySourceUploadId(allVideos)
 
     for (const sourceUpload of sourceUploads) {
       await this.binaryReader.delete(sourceUpload.tusUploadId)

@@ -1,6 +1,6 @@
 import type { BulkUploadStatus } from '../../domain/entities/BulkUpload'
 import type { SourceUploadStatus } from '../../domain/entities/SourceUpload'
-import type { PublishedVideoStatus, VideoPlatform } from '../../domain/entities/PublishedVideo'
+import { groupBySourceUploadId, type PublishedVideoStatus, type VideoPlatform } from '../../domain/entities/PublishedVideo'
 import type { BulkUploadRepository } from '../../domain/ports/BulkUploadRepository'
 import type { SourceUploadRepository } from '../../domain/ports/SourceUploadRepository'
 import type { PublishedVideoRepository } from '../../domain/ports/PublishedVideoRepository'
@@ -45,12 +45,7 @@ export class GetBulkUploadStatusUseCase {
 
     const sourceUploads = await this.sourceUploadRepository.findByBulkUploadId(bulk.id)
     const allVideos = await this.publishedVideoRepository.findBySourceUploadIds(sourceUploads.map((sourceUpload) => sourceUpload.id))
-    const videosBySourceUploadId = new Map<string, typeof allVideos>()
-    for (const video of allVideos) {
-      const list = videosBySourceUploadId.get(video.sourceUploadId) ?? []
-      list.push(video)
-      videosBySourceUploadId.set(video.sourceUploadId, list)
-    }
+    const videosBySourceUploadId = groupBySourceUploadId(allVideos)
 
     const items: BulkUploadItemStatus[] = sourceUploads.map((sourceUpload) => ({
       sourceId: sourceUpload.sourceId,
