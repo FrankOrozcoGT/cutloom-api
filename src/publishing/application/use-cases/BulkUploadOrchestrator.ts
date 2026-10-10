@@ -8,7 +8,12 @@ import type { ContentRevisionRepository } from '../../domain/ports/ContentRevisi
 import type { PlatformCredentialResolver } from '../../domain/ports/PlatformCredentialResolver'
 import type { VideoUploader } from '../../domain/ports/VideoUploader'
 import { VideoUploadQuotaExceededError, VideoUploadRejectedError, VideoUploadTokenExpiredError } from '../../domain/ports/VideoUploader'
-import { SchedulePieceType, ScheduleUploadPlanService, type ScheduleSlotItem } from '../services/ScheduleUploadPlanService'
+import {
+  SchedulePieceType,
+  ScheduleCapacityExceededError,
+  ScheduleUploadPlanService,
+  type ScheduleSlotItem,
+} from '../services/ScheduleUploadPlanService'
 import { appendLongVideoLink, buildLongVideoLink } from '../services/appendLongVideoLink'
 import type { NotificationRepository } from '../../../shared/domain/ports/NotificationRepository'
 import type { NotificationPublisher } from '../../../shared/domain/ports/NotificationPublisher'
@@ -107,46 +112,57 @@ export class BulkUploadOrchestrator {
     const videosByPlatform = this.groupByPlatform(awaitingVideos)
 
     for (const [platform, videos] of videosByPlatform) {
-      await this.publishedVideoRepository.withOrganizationLock(bulkUpload.organizationId, async () => {
-        const occupyingSlots = await this.publishedVideoRepository.findOccupyingSlotsByOrganizationId(
-          bulkUpload.organizationId,
-          platform,
-          new Date(),
-        )
-        const scheduleItems: ScheduleSlotItem[] = videos.map((video) => ({
-          sourceId: video.sourceId,
-          videoType: video.videoType === PublishedVideoType.Long ? SchedulePieceType.Long : SchedulePieceType.Short,
-          priority: video.priority,
-        }))
-        const publishAtBySourceId = new Map(
-          this.scheduleUploadPlanService
-            .plan(
-              {
-                organizationId: bulkUpload.organizationId,
-                timeZone: bulkUpload.timeZone,
-                longVideoPublishDay: bulkUpload.longVideoPublishDay,
-                items: scheduleItems,
-              },
-              occupyingSlots,
-            )
-            .map((slot) => [slot.sourceId, slot.publishAt]),
-        )
+      try {
+        await this.publishedVideoRepository.withOrganizationLock(bulkUpload.organizationId, async () => {
+          const occupyingSlots = await this.publishedVideoRepository.findOccupyingSlotsByOrganizationId(
+            bulkUpload.organizationId,
+            platform,
+            new Date(),
+          )
+          const scheduleItems: ScheduleSlotItem[] = videos.map((video) => ({
+            sourceId: video.sourceId,
+            videoType: video.videoType === PublishedVideoType.Long ? SchedulePieceType.Long : SchedulePieceType.Short,
+            priority: video.priority,
+          }))
+          const publishAtBySourceId = new Map(
+            this.scheduleUploadPlanService
+              .plan(
+                {
+                  organizationId: bulkUpload.organizationId,
+                  timeZone: bulkUpload.timeZone,
+                  longVideoPublishDay: bulkUpload.longVideoPublishDay,
+                  items: scheduleItems,
+                },
+                occupyingSlots,
+              )
+              .map((slot) => [slot.sourceId, slot.publishAt]),
+          )
 
-        const supportsNativeScheduling = this.supportsNativeSchedulingByPlatform[platform]
-        for (const video of videos) {
-          const publishAt = publishAtBySourceId.get(video.sourceId) ?? null
-          // Sin scheduling nativo y con fecha futura: el intento real lo hace el cron de
-          // PublishScheduledVideosUseCase al llegar publishAt, no acá — el registro debe quedar
-          // Scheduled (lo que esa query recorre), nunca Publishing (que implicaría un intento
-          // en curso que en realidad nunca se hizo).
-          const nextStatus =
-            publishAt && !supportsNativeScheduling ? PublishedVideoStatus.Scheduled : PublishedVideoStatus.Publishing
-          const scheduled = await this.publishedVideoRepository.assignScheduleAndStartPublishing(video.id, publishAt, nextStatus)
-          if (nextStatus === PublishedVideoStatus.Publishing) {
-            await this.publishOne(scheduled)
+          const supportsNativeScheduling = this.supportsNativeSchedulingByPlatform[platform]
+          for (const video of videos) {
+            const publishAt = publishAtBySourceId.get(video.sourceId) ?? null
+            // Sin scheduling nativo y con fecha futura: el intento real lo hace el cron de
+            // PublishScheduledVideosUseCase al llegar publishAt, no acá — el registro debe quedar
+            // Scheduled (lo que esa query recorre), nunca Publishing (que implicaría un intento
+            // en curso que en realidad nunca se hizo).
+            const nextStatus =
+              publishAt && !supportsNativeScheduling ? PublishedVideoStatus.Scheduled : PublishedVideoStatus.Publishing
+            const scheduled = await this.publishedVideoRepository.assignScheduleAndStartPublishing(video.id, publishAt, nextStatus)
+            if (nextStatus === PublishedVideoStatus.Publishing) {
+              await this.publishOne(scheduled)
+            }
           }
-        }
-      })
+        })
+      } catch (error) {
+        if (!(error instanceof ScheduleCapacityExceededError)) throw error
+        this.logger.error({ bulkUploadId, platform }, '[BulkUploadOrchestrator] publishBulk: schedule capacity exceeded')
+        const notification = await this.notificationRepository.create({
+          organizationId: bulkUpload.organizationId,
+          type: NotificationType.BulkUploadScheduleFailed,
+          data: { seriesId: bulkUpload.seriesId },
+        })
+        this.notificationPublisher.publish(notification)
+      }
     }
 
     await this.reconcileBulkUploadStatus.execute(bulkUploadId)

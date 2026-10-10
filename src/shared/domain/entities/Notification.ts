@@ -23,17 +23,22 @@ export const NotificationType = {
   VideoPublished: 'video_published',
   /** El intento de publicación falló — nunca llegó a existir en la plataforma. Mismo mecanismo para cualquier plataforma: YouTube lo detecta en la misma llamada de subida; TikTok vía webhook post.publish.failed. */
   VideoUploadFailed: 'video_upload_failed',
+  /** No se pudo calendarizar NINGÚN item del bulk (ScheduleCapacityExceededError) — el calendario
+   * de la organización está saturado más allá de lo que ScheduleUploadPlanService puede resolver
+   * buscando hacia adelante. A diferencia de VideoUploadFailed (un item puntual), esto bloquea el
+   * bulk completo antes de intentar publicar nada — ver BulkUploadOrchestrator.publishBulk. */
+  BulkUploadScheduleFailed: 'bulk_upload_schedule_failed',
 } as const
 export type NotificationType = (typeof NotificationType)[keyof typeof NotificationType]
 
-export interface TikTokDraftReadyData {
+interface TikTokDraftReadyData {
   sourceId: string
   seriesId: string
   /** Link a la bandeja de TikTok del usuario, para que entre directo a terminar de publicar — ver PublishScheduledVideosUseCase. */
   tikTokInboxUrl: string
 }
 
-export interface VideoPublishedData {
+interface VideoPublishedData {
   sourceId: string
   seriesId: string
   platform: 'youtube' | 'tiktok'
@@ -41,7 +46,7 @@ export interface VideoPublishedData {
   videoUrl: string | null
 }
 
-export interface VideoUploadFailedData {
+interface VideoUploadFailedData {
   sourceId: string
   seriesId: string
   platform: 'youtube' | 'tiktok'
@@ -49,11 +54,16 @@ export interface VideoUploadFailedData {
   failReason: string | null
 }
 
+interface BulkUploadScheduleFailedData {
+  seriesId: string
+}
+
 /** Shape de `data` según `type` — el dominio compartido conoce todos los tipos posibles (a diferencia de platformOptions/platformAccountInfo, que son opacos para el dominio y solo el adaptador de cada proveedor los interpreta). */
 export type NotificationData = {
   [NotificationType.TikTokDraftReady]: TikTokDraftReadyData
   [NotificationType.VideoPublished]: VideoPublishedData
   [NotificationType.VideoUploadFailed]: VideoUploadFailedData
+  [NotificationType.BulkUploadScheduleFailed]: BulkUploadScheduleFailedData
 }
 
 export interface NotificationProps<T extends NotificationType = NotificationType> {
