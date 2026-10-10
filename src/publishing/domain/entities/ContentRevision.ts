@@ -54,7 +54,9 @@ export interface ContentRevisionProps {
 /**
  * Append-only: nunca se actualiza una revisión existente, cada iteración con la IA
  * agrega una fila nueva con version = anterior + 1. "Última versión" siempre gana
- * para publicar (ver GenerateYouTubeMetadataUseCase y BulkUploadToYouTubeUseCase).
+ * para publicar (ver GenerateYouTubeMetadataUseCase y BulkUploadVideoUseCase). Una sola
+ * ContentRevision por sourceId, compartida entre cualquier plataforma — cada VideoUploader
+ * adapta el mismo título/descripción/tags al shape que exige su API (ver adaptMetadataForTikTok).
  */
 export class ContentRevision {
   private constructor(private readonly props: ContentRevisionProps) {}
