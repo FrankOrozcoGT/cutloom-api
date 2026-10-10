@@ -2,6 +2,17 @@ import { boolean, index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-o
 import { organizations } from '../../../identity/infrastructure/db/schema'
 import type { NotificationType } from '../../domain/entities/Notification'
 
+// text PK, no uuid: el identificador es el propio nombre semántico ya usado en código
+// ('shorts_ai', 'youtube_ai', 'advanced_subtitles') — evita una columna de FK separada del
+// nombre legible. Vive en shared (no en billing) porque billing y shorts-intelligence son
+// ambos consumidores del mismo catálogo — ningún bounded context de negocio depende de otro,
+// igual que organizations.
+export const features = pgTable('features', {
+  id: text('id').primaryKey(),
+  creditEligible: boolean('credit_eligible').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 /**
  * Tabla genérica de notificaciones — un solo modelo para cualquier bounded context que
  * necesite avisar algo al usuario (hoy: publishing, cuando un borrador de TikTok queda listo

@@ -2,9 +2,10 @@ import type { FeatureUsageAuthorizer } from '../../domain/ports/FeatureUsageAuth
 import type { ShortsIntelligencePort, SubtitleSegmentInput } from '../../domain/ports/ShortsIntelligencePort'
 import { ShortPromptBuilder, type ShortIdealJson } from '../services/ShortPromptBuilder'
 import type { UsageEventService } from '../services/UsageEventService'
-import { DEEPSEEK_MODEL, EmptySegmentsError, SHORTS_AI_FEATURE } from '../../domain/constants'
+import { DEEPSEEK_MODEL, EmptySegmentsError } from '../../domain/constants'
 import { totalMinutes } from '../../domain/minutes'
-import { UsageEventFeature } from '../../domain/ports/UsageEventRepository'
+import { UsageEventAction } from '../../../shared/domain/entities/UsageEventAction'
+import { Feature } from '../../../shared/domain/entities/Feature'
 
 export class ShortsLlmFailedError extends Error {
   constructor(cause?: unknown) {
@@ -53,7 +54,7 @@ export class DetectShortsUseCase {
 
     await this.featureUsageAuthorizer.requireEntitlement({
       organizationId: input.organizationId,
-      feature: SHORTS_AI_FEATURE,
+      feature: Feature.ShortsAi,
       amount: totalMinutes(input.segments),
     })
 
@@ -68,13 +69,13 @@ export class DetectShortsUseCase {
 
     await this.usageEventService.record({
       organizationId: input.organizationId,
-      feature: UsageEventFeature.DetectShorts,
+      action: UsageEventAction.DetectShorts,
       provider: 'deepseek',
       model: DEEPSEEK_MODEL,
       promptTokens: result.usage.promptTokens,
       completionTokens: result.usage.completionTokens,
       cost: null,
-      metadata: { feature: UsageEventFeature.DetectShorts, nCandidates: result.shorts.length },
+      metadata: { action: UsageEventAction.DetectShorts, nCandidates: result.shorts.length },
     })
 
     const candidates = result.shorts.map((short) => ({ id: crypto.randomUUID(), ...short }))

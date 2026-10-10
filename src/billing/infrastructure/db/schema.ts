@@ -1,18 +1,12 @@
 import { boolean, index, integer, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core'
 import { organizations } from '../../../identity/infrastructure/db/schema'
+import { features } from '../../../shared/infrastructure/db/schema'
+import type { Feature } from '../../../shared/domain/entities/Feature'
+import type { CreditLedgerEntryType } from '../../domain/entities/CreditLedgerEntryType'
 
 export const subscriptionStatusEnum = pgEnum('subscription_status', ['active', 'past_due', 'inactive'])
 export const subscriptionIntervalEnum = pgEnum('subscription_interval', ['month', 'year'])
 export const paymentStatusEnum = pgEnum('payment_status', ['pending', 'succeeded', 'failed'])
-
-// text PK, no uuid: el identificador es el propio nombre semántico ya usado en código
-// ('shorts_ai', 'youtube_ai', 'advanced_subtitles') — evita una columna de FK separada del
-// nombre legible y mantiene el mismo string que ya circula por casos de uso y plan_features.
-export const features = pgTable('features', {
-  id: text('id').primaryKey(),
-  creditEligible: boolean('credit_eligible').notNull().default(true),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
 
 export const plans = pgTable('plans', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -21,10 +15,16 @@ export const plans = pgTable('plans', {
   amountInCents: integer('amount_in_cents').notNull(),
   currency: text('currency').notNull(),
   interval: subscriptionIntervalEnum('interval').notNull(),
+  // Créditos que se acreditan a creditAccount.balance cada vez que se paga este plan (alta,
+  // renovación o cambio de plan) — un solo pozo total, no desglosado por feature (ver
+  // CREDIT_LEDGER_PLAN_GRANTS). Qué features puede pagar ese pozo lo decide planFeatures.
+  creditsPerCycle: integer('credits_per_cycle').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+// Solo QUÉ features cubre el plan — el CUÁNTO (creditsPerCycle) vive en plans, no acá: un
+// plan da un único pozo de créditos, no un tope independiente por feature.
 export const planFeatures = pgTable(
   'plan_features',
   {
@@ -34,9 +34,8 @@ export const planFeatures = pgTable(
       .references(() => plans.id, { onDelete: 'cascade' }),
     feature: text('feature')
       .notNull()
-      .references(() => features.id, { onDelete: 'restrict' }),
-    // null = acceso ilimitado durante el ciclo; number = tope de usos por ciclo de facturación.
-    usageLimit: integer('usage_limit'),
+      .references(() => features.id, { onDelete: 'restrict' })
+      .$type<Feature>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [uniqueIndex('plan_features_plan_id_feature_idx').on(table.planId, table.feature)],
@@ -69,40 +68,12 @@ export const subscriptions = pgTable(
   ],
 )
 
-// Balance de uso restante por (organización, feature, ciclo de facturación actual) — misma
-// mecánica que creditAccounts.balance (un balance que se descuenta), no un contador que sube
-// contra un tope externo. Al activar/renovar/cambiar de plan, se CARGA a plan_features.usageLimit
-// del plan vigente (ver ActivateSubscriptionUseCase/RenewalUseCase/ChangePlanUseCase) — el
-// consumo del ciclo anterior no se arrastra. "¿Esta organización tiene esta feature?" se sigue
-// resolviendo en vivo desde subscriptions (¿activa?) + plan_features (¿el plan actual la
-// incluye?), nunca desde esta tabla — evita que editar el catálogo de un plan ya existente deje
-// a las organizaciones suscritas con datos desincronizados.
-export const entitlements = pgTable(
-  'entitlements',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    organizationId: uuid('organization_id')
-      .notNull()
-      .references(() => organizations.id, { onDelete: 'cascade' }),
-    feature: text('feature')
-      .notNull()
-      .references(() => features.id, { onDelete: 'restrict' }),
-    // Balance restante de este ciclo — baja con cada uso, nunca sube salvo reset de ciclo.
-    // null = la feature no tiene tope (usageLimit null en plan_features): nunca se consume de
-    // acá, el flujo de decisión pasa directo a crédito si el plan no cubre.
-    balance: integer('balance'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [uniqueIndex('entitlements_organization_id_feature_idx').on(table.organizationId, table.feature)],
-)
-
-// balance: unidades genéricas de feature (mismas unidades que entitlements.balance /
-// plan_features.usageLimit — minutos, llamadas, lo que cada feature defina) — NO dinero. La
-// conversión dinero->unidades ocurre al recargar (ver TopUpCreditsUseCase / CREDIT_TOPUP_RATE_*),
-// nunca se guarda un monto en centavos acá.
-export const creditAccounts = pgTable(
-  'credit_accounts',
+// unidades genéricas (minutos, llamadas, lo que cada feature defina) — NO dinero. Único pozo
+// de crédito por organización, sin desglose por feature ni por origen (plan vs. comprado): el
+// historial/origen de cada movimiento vive en creditLedgerEntries; esta tabla es solo el saldo
+// actual cacheado para lectura rápida en el camino caliente de autorización.
+export const creditAccount = pgTable(
+  'credit_account',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     organizationId: uuid('organization_id')
@@ -112,25 +83,89 @@ export const creditAccounts = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [uniqueIndex('credit_accounts_organization_id_idx').on(table.organizationId)],
+  (table) => [uniqueIndex('credit_account_organization_id_idx').on(table.organizationId)],
 )
 
-export const creditTransactions = pgTable(
-  'credit_transactions',
+// Supertipo (patrón class-table): solo atributos verdaderos para TODO movimiento de crédito,
+// sin importar su origen — monto con signo (+ entrada, - salida), tipo, organización, cuándo.
+// Cada tipo tiene su propia tabla hija 1:1 con el dato específico que le pertenece (ver
+// creditLedgerPlanGrants/creditLedgerTopups/creditLedgerUsages/creditLedgerExpirations) — evita
+// columnas nullable condicionales según el tipo de fila (alerta de normalización). `type` es
+// text plano en vez de pgEnum: agregar un tipo nuevo es un cambio de código (ver
+// CreditLedgerEntryType), nunca una migración ALTER TYPE.
+export const creditLedgerEntries = pgTable(
+  'credit_ledger_entries',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     organizationId: uuid('organization_id')
       .notNull()
       .references(() => organizations.id, { onDelete: 'cascade' }),
     amount: integer('amount').notNull(),
-    reason: text('reason').notNull(),
-    recurrenteCheckoutId: text('recurrente_checkout_id'),
+    type: text('type').notNull().$type<CreditLedgerEntryType>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [
-    index('credit_transactions_organization_id_idx').on(table.organizationId),
-    uniqueIndex('credit_transactions_recurrente_checkout_id_idx').on(table.recurrenteCheckoutId),
-  ],
+  (table) => [index('credit_ledger_entries_organization_id_idx').on(table.organizationId)],
+)
+
+// Entrada: el plan acredita su creditsPerCycle al activar/renovar/cambiar de plan. Idempotente
+// por (subscriptionId, periodStart) — subscriptionId es fijo por toda la vida de la
+// suscripción (no cambia entre ciclos), así que periodStart es lo que distingue cada ciclo real
+// de facturación y evita doble acreditación ante reintentos del webhook de Recurrente.
+export const creditLedgerPlanGrants = pgTable(
+  'credit_ledger_plan_grants',
+  {
+    ledgerEntryId: uuid('ledger_entry_id')
+      .primaryKey()
+      .references(() => creditLedgerEntries.id, { onDelete: 'cascade' }),
+    subscriptionId: uuid('subscription_id')
+      .notNull()
+      .references(() => subscriptions.id, { onDelete: 'restrict' }),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  },
+  (table) => [uniqueIndex('credit_ledger_plan_grants_subscription_id_period_start_idx').on(table.subscriptionId, table.periodStart)],
+)
+
+// Entrada: compra de crédito libre, pago único vía Recurrente — idempotente por checkoutId.
+export const creditLedgerTopups = pgTable(
+  'credit_ledger_topups',
+  {
+    ledgerEntryId: uuid('ledger_entry_id')
+      .primaryKey()
+      .references(() => creditLedgerEntries.id, { onDelete: 'cascade' }),
+    recurrenteCheckoutId: text('recurrente_checkout_id').notNull(),
+  },
+  (table) => [uniqueIndex('credit_ledger_topups_recurrente_checkout_id_idx').on(table.recurrenteCheckoutId)],
+)
+
+// Salida: consumo real de una feature — siempre atada a cuál, a diferencia de las entradas.
+export const creditLedgerUsages = pgTable('credit_ledger_usages', {
+  ledgerEntryId: uuid('ledger_entry_id')
+    .primaryKey()
+    .references(() => creditLedgerEntries.id, { onDelete: 'cascade' }),
+  feature: text('feature')
+    .notNull()
+    .references(() => features.id, { onDelete: 'restrict' })
+    .$type<Feature>(),
+})
+
+// Salida: "lo que no se usó del plan, se pierde" — ajuste al cerrar el mes vencido, por el
+// sobrante entre lo acreditado (plan_grant) y lo gastado (usage) en ese mismo periodStart.
+// Idempotente por (organizationId, periodStart): un mes ya cerrado de esta organización no
+// vuelve a expirar. organizationId se duplica acá (ya vive en creditLedgerEntries, la fila
+// padre) porque la unicidad real es por organización, no global — un periodStart compartido
+// entre organizaciones distintas no debe colisionar.
+export const creditLedgerExpirations = pgTable(
+  'credit_ledger_expirations',
+  {
+    ledgerEntryId: uuid('ledger_entry_id')
+      .primaryKey()
+      .references(() => creditLedgerEntries.id, { onDelete: 'cascade' }),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  },
+  (table) => [uniqueIndex('credit_ledger_expirations_organization_id_period_start_idx').on(table.organizationId, table.periodStart)],
 )
 
 // Una sola fila vigente a la vez (la última por effective_from) — todas las réplicas de una

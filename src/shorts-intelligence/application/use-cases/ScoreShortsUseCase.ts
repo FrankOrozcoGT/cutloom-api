@@ -4,8 +4,9 @@ import type { ShortsIntelligencePort } from '../../domain/ports/ShortsIntelligen
 import { ShortScorePromptBuilder, type CandidateForScoring } from '../services/ShortScorePromptBuilder'
 import type { ShortIdealJson } from '../services/ShortPromptBuilder'
 import type { UsageEventService } from '../services/UsageEventService'
-import { DEEPSEEK_MODEL, SHORTS_AI_FEATURE } from '../../domain/constants'
-import { UsageEventFeature } from '../../domain/ports/UsageEventRepository'
+import { DEEPSEEK_MODEL } from '../../domain/constants'
+import { UsageEventAction } from '../../../shared/domain/entities/UsageEventAction'
+import { Feature } from '../../../shared/domain/entities/Feature'
 import { totalMinutes } from '../../domain/minutes'
 import type { DetectedShortCandidate } from './DetectShortsUseCase'
 import type { Logger } from '../../../shared/domain/ports/Logger'
@@ -96,7 +97,7 @@ export class ScoreShortsUseCase {
 
     await this.featureUsageAuthorizer.requireEntitlement({
       organizationId: input.organizationId,
-      feature: SHORTS_AI_FEATURE,
+      feature: Feature.ShortsAi,
       amount: totalMinutes(input.candidates),
     })
 
@@ -128,13 +129,13 @@ export class ScoreShortsUseCase {
 
     await this.usageEventService.record({
       organizationId: input.organizationId,
-      feature: UsageEventFeature.ScoreShorts,
+      action: UsageEventAction.ScoreShorts,
       provider: 'deepseek',
       model: DEEPSEEK_MODEL,
       promptTokens: scoringUsage?.promptTokens ?? 0,
       completionTokens: scoringUsage?.completionTokens ?? 0,
       cost: null,
-      metadata: { feature: UsageEventFeature.ScoreShorts, nShorts: shorts.length, warnings },
+      metadata: { action: UsageEventAction.ScoreShorts, nShorts: shorts.length, warnings },
     })
 
     return { shorts, warnings }
@@ -167,13 +168,13 @@ export class ScoreShortsUseCase {
           // no de promptTokens/completionTokens (ver AuthorizeFeatureUsageUseCase).
           await this.usageEventService.record({
             organizationId,
-            feature: UsageEventFeature.AnalyzeEmotion,
+            action: UsageEventAction.AnalyzeEmotion,
             provider: 'sherpa-onnx',
             model: 'sense-voice',
             promptTokens: 0,
             completionTokens: 0,
             cost: null,
-            metadata: { feature: UsageEventFeature.AnalyzeEmotion },
+            metadata: { action: UsageEventAction.AnalyzeEmotion },
             cpuTimeMicros,
             peakMemoryBytes,
           })

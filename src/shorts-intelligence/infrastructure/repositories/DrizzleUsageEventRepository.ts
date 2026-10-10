@@ -6,7 +6,8 @@ import type { UsageEvent, UsageEventRepository } from '../../domain/ports/UsageE
 function toEvent(row: typeof usageEvents.$inferSelect): UsageEvent {
   return {
     organizationId: row.organizationId,
-    feature: row.feature,
+    action: row.action,
+    featureId: row.featureId,
     provider: row.provider,
     model: row.model,
     promptTokens: row.promptTokens,
@@ -24,7 +25,8 @@ export class DrizzleUsageEventRepository implements UsageEventRepository {
   async record(event: UsageEvent): Promise<void> {
     await this.db.insert(usageEvents).values({
       organizationId: event.organizationId,
-      feature: event.feature,
+      action: event.action,
+      featureId: event.featureId,
       provider: event.provider,
       model: event.model,
       promptTokens: event.promptTokens,

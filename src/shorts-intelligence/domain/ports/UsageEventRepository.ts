@@ -1,30 +1,26 @@
-/** Discriminante de tipo — cada valor define su propio shape de metadata (ver UsageEventMetadataByFeature). */
-export const UsageEventFeature = {
-  ImproveSubtitles: 'improve_subtitles',
-  DetectShorts: 'detect_shorts',
-  ScoreShorts: 'score_shorts',
-  AnalyzeEmotion: 'analyze_emotion',
-  GenerateYouTubeMetadata: 'generate_youtube_metadata',
-} as const
-export type UsageEventFeature = (typeof UsageEventFeature)[keyof typeof UsageEventFeature]
+import type { Feature } from '../../../shared/domain/entities/Feature'
+import { UsageEventAction } from '../../../shared/domain/entities/UsageEventAction'
 
-interface UsageEventMetadataByFeature {
-  [UsageEventFeature.ImproveSubtitles]: { feature: typeof UsageEventFeature.ImproveSubtitles; nCorrections: number }
-  [UsageEventFeature.DetectShorts]: { feature: typeof UsageEventFeature.DetectShorts; nCandidates: number }
-  [UsageEventFeature.ScoreShorts]: {
-    feature: typeof UsageEventFeature.ScoreShorts
+interface UsageEventMetadataByAction {
+  [UsageEventAction.ImproveSubtitles]: { action: typeof UsageEventAction.ImproveSubtitles; nCorrections: number }
+  [UsageEventAction.DetectShorts]: { action: typeof UsageEventAction.DetectShorts; nCandidates: number }
+  [UsageEventAction.ScoreShorts]: {
+    action: typeof UsageEventAction.ScoreShorts
     nShorts: number
     warnings: string[]
   }
-  [UsageEventFeature.AnalyzeEmotion]: { feature: typeof UsageEventFeature.AnalyzeEmotion }
-  [UsageEventFeature.GenerateYouTubeMetadata]: { feature: typeof UsageEventFeature.GenerateYouTubeMetadata }
+  [UsageEventAction.AnalyzeEmotion]: { action: typeof UsageEventAction.AnalyzeEmotion }
+  [UsageEventAction.GenerateYouTubeMetadata]: { action: typeof UsageEventAction.GenerateYouTubeMetadata }
 }
 
-export type UsageEventMetadata = UsageEventMetadataByFeature[UsageEventFeature]
+export type UsageEventMetadata = UsageEventMetadataByAction[UsageEventAction]
 
 export interface UsageEvent {
   organizationId: string
-  feature: string
+  /** Acción granular que originó el evento — ver FEATURE_BY_USAGE_EVENT_ACTION para el paquete facturable al que pertenece. */
+  action: UsageEventAction
+  /** Paquete facturable (ver billing: features/plan_features/entitlements) — siempre derivado de `action` vía FEATURE_BY_USAGE_EVENT_ACTION, nunca decidido por el caller. */
+  featureId: Feature
   provider: string
   model: string
   promptTokens: number

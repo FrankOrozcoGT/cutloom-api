@@ -3,9 +3,10 @@ import type { ShortsIntelligencePort, SubtitleSegmentInput } from '../../domain/
 import { SubtitleCorrection } from '../../domain/entities/SubtitleCorrection'
 import { SubtitlePromptBuilder } from '../services/SubtitlePromptBuilder'
 import type { UsageEventService } from '../services/UsageEventService'
-import { ADVANCED_SUBTITLES_FEATURE, DEEPSEEK_MODEL, EmptySegmentsError } from '../../domain/constants'
+import { DEEPSEEK_MODEL, EmptySegmentsError } from '../../domain/constants'
 import { totalMinutes } from '../../domain/minutes'
-import { UsageEventFeature } from '../../domain/ports/UsageEventRepository'
+import { UsageEventAction } from '../../../shared/domain/entities/UsageEventAction'
+import { Feature } from '../../../shared/domain/entities/Feature'
 
 export class SubtitlesLlmFailedError extends Error {
   constructor(cause?: unknown) {
@@ -41,7 +42,7 @@ export class ImproveSubtitlesUseCase {
 
     await this.featureUsageAuthorizer.requireEntitlement({
       organizationId: input.organizationId,
-      feature: ADVANCED_SUBTITLES_FEATURE,
+      feature: Feature.AdvancedSubtitles,
       amount: totalMinutes(input.segments),
     })
 
@@ -66,13 +67,13 @@ export class ImproveSubtitlesUseCase {
 
     await this.usageEventService.record({
       organizationId: input.organizationId,
-      feature: UsageEventFeature.ImproveSubtitles,
+      action: UsageEventAction.ImproveSubtitles,
       provider: 'deepseek',
       model: DEEPSEEK_MODEL,
       promptTokens: result.usage.promptTokens,
       completionTokens: result.usage.completionTokens,
       cost: null,
-      metadata: { feature: UsageEventFeature.ImproveSubtitles, nCorrections: correctedSubtitles.length },
+      metadata: { action: UsageEventAction.ImproveSubtitles, nCorrections: correctedSubtitles.length },
     })
 
     return { summary: result.summary, correctedSubtitles }

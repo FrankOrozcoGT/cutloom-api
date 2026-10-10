@@ -30,16 +30,15 @@ import { registerNotificationRoutes } from './notificationRoutes'
 import { ListNotificationsUseCase } from '../../application/use-cases/ListNotificationsUseCase'
 import { MarkNotificationReadUseCase } from '../../application/use-cases/MarkNotificationReadUseCase'
 import { InMemoryNotificationPublisher } from './InMemoryNotificationPublisher'
-import { UsageEventFeature } from '../../../shorts-intelligence/domain/ports/UsageEventRepository'
+import type { Feature } from '../../domain/entities/Feature'
 
-
-type RequireEntitlement = (input: { organizationId: string; feature: string; amount: number }) => Promise<void>
+type RequireEntitlement = (input: { organizationId: string; feature: Feature; amount: number }) => Promise<void>
 
 /** Traduce el `FeatureAccessDeniedError` genérico de billing al error de dominio propio del
  * bounded context llamador, para que cada contexto solo conozca sus propias clases de error. */
 function adaptRequireEntitlement<E extends Error>(
   requireEntitlement: RequireEntitlement,
-  ErrorClass: new (feature: string) => E,
+  ErrorClass: new (feature: Feature) => E,
 ): RequireEntitlement {
   return async (input) => {
     try {
@@ -108,8 +107,8 @@ export function buildServer() {
     db,
     {
       findByOrganizationId: async (organizationId) => {
-        const features = await billingModule.entitlementRepository.findActiveFeaturesByOrganizationId(organizationId)
-        return features.map(({ feature, planBalance }) => ({ feature, active: true as const, planBalance }))
+        const features = await billingModule.planFeatureAccessRepository.findActiveFeaturesByOrganizationId(organizationId)
+        return features.map((feature) => ({ feature, active: true as const }))
       },
     },
     {
@@ -164,13 +163,13 @@ export function buildServer() {
       record: (input) =>
         shortsModule.usageEventService.record({
           organizationId: input.organizationId,
-          feature: input.feature,
+          action: input.action,
           provider: input.provider,
           model: input.model,
           promptTokens: input.promptTokens,
           completionTokens: input.completionTokens,
           cost: null,
-          metadata: { feature: UsageEventFeature.GenerateYouTubeMetadata },
+          metadata: { action: input.action },
         }),
     },
     app.log,
@@ -219,6 +218,14 @@ export function buildServer() {
   Bun.cron('0 * * * *', () => {
     publishingModule.publishScheduledTikTokVideosUseCase.execute().catch((error: unknown) => {
       app.log.error({ error }, 'publishScheduledTikTokVideosUseCase failed')
+    })
+  })
+
+  // Día 1 de cada mes, 00:00 — recarga mensual del pozo de créditos, independiente del ciclo de
+  // cobro real de cada suscripción (ver GrantMonthlyPlanCreditsUseCase).
+  Bun.cron('0 0 1 * *', () => {
+    billingModule.grantMonthlyPlanCreditsUseCase.execute().catch((error: unknown) => {
+      app.log.error({ error }, 'grantMonthlyPlanCreditsUseCase failed')
     })
   })
 

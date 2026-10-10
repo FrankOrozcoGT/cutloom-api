@@ -1,5 +1,7 @@
+import type { Feature } from '../../../shared/domain/entities/Feature'
+
 export class FeatureAccessDeniedError extends Error {
-  constructor(feature: string) {
+  constructor(feature: Feature) {
     super(`Access denied for feature: ${feature}`)
     this.name = 'FeatureAccessDeniedError'
   }
@@ -7,5 +9,5 @@ export class FeatureAccessDeniedError extends Error {
 
 /** Puerto de publishing: billing es dueño de la autorización real, inyectada como adaptador desde el composition root (ver server.ts). */
 export interface PublishingFeatureAuthorizer {
-  requireEntitlement(input: { organizationId: string; feature: string; amount: number }): Promise<void>
+  requireEntitlement(input: { organizationId: string; feature: Feature; amount: number }): Promise<void>
 }

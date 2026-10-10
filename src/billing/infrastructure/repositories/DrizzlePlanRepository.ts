@@ -13,6 +13,7 @@ function toEntity(row: typeof plans.$inferSelect): Plan {
     amountInCents: row.amountInCents,
     currency: row.currency,
     interval: row.interval,
+    creditsPerCycle: row.creditsPerCycle,
   })
 }
 
@@ -21,7 +22,6 @@ function toFeatureEntity(row: typeof planFeatures.$inferSelect): PlanFeature {
     id: row.id,
     planId: row.planId,
     feature: row.feature,
-    usageLimit: row.usageLimit,
   })
 }
 
@@ -36,6 +36,12 @@ export class DrizzlePlanRepository implements PlanRepository {
   async findById(id: string): Promise<Plan | null> {
     const [row] = await this.db.select().from(plans).where(eq(plans.id, id)).limit(1)
     return row ? toEntity(row) : null
+  }
+
+  async findByIds(ids: string[]): Promise<Plan[]> {
+    if (ids.length === 0) return []
+    const rows = await this.db.select().from(plans).where(inArray(plans.id, ids))
+    return rows.map(toEntity)
   }
 
   async findFeaturesByPlanId(planId: string): Promise<PlanFeature[]> {

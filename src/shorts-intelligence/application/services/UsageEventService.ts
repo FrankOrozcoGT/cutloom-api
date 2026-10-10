@@ -1,8 +1,9 @@
+import { FEATURE_BY_USAGE_EVENT_ACTION, type UsageEventAction } from '../../../shared/domain/entities/UsageEventAction'
 import type { UsageEventMetadata, UsageEventRepository } from '../../domain/ports/UsageEventRepository'
 
 export interface RecordUsageInput {
   organizationId: string
-  feature: string
+  action: UsageEventAction
   provider: string
   model: string
   promptTokens: number
@@ -25,7 +26,8 @@ export class UsageEventService {
     try {
       await this.usageEventRepository.record({
         organizationId: input.organizationId,
-        feature: input.feature,
+        action: input.action,
+        featureId: FEATURE_BY_USAGE_EVENT_ACTION[input.action],
         provider: input.provider,
         model: input.model,
         promptTokens: input.promptTokens,
@@ -36,7 +38,7 @@ export class UsageEventService {
         peakMemoryBytes: input.peakMemoryBytes ?? null,
       })
     } catch (error) {
-      console.error('Failed to record usage event', { feature: input.feature, error })
+      console.error('Failed to record usage event', { action: input.action, error })
     }
   }
 }

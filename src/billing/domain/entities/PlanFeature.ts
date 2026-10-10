@@ -1,9 +1,10 @@
+import type { Feature } from '../../../shared/domain/entities/Feature'
+
+/** Solo declara QUÉ feature cubre el plan — el CUÁNTO (creditsPerCycle) vive en Plan, no acá. */
 export interface PlanFeatureProps {
   id: string
   planId: string
-  feature: string
-  /** null = acceso ilimitado por ciclo; number = tope de usos por ciclo de facturación. */
-  usageLimit: number | null
+  feature: Feature
 }
 
 export class PlanFeature {
@@ -21,11 +22,7 @@ export class PlanFeature {
     return this.props.planId
   }
 
-  get feature(): string {
+  get feature(): Feature {
     return this.props.feature
-  }
-
-  get usageLimit(): number | null {
-    return this.props.usageLimit
   }
 }

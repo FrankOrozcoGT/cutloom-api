@@ -5,8 +5,8 @@ import type { PublishingFeatureAuthorizer } from '../../domain/ports/PublishingF
 import type { UsageEventRecorder } from '../../domain/ports/UsageEventRecorder'
 import { YouTubeMetadataPromptBuilder, type VideoContext, type VideoContextSubtitle } from '../services/YouTubeMetadataPromptBuilder'
 import type { Logger } from '../../../shared/domain/ports/Logger'
-
-const YOUTUBE_AI_FEATURE = 'youtube_ai'
+import { UsageEventAction } from '../../../shared/domain/entities/UsageEventAction'
+import { Feature } from '../../../shared/domain/entities/Feature'
 
 /** Minutos del video cubiertos por los subtítulos de contexto, redondeados hacia arriba — mismo
  * algoritmo que shorts-intelligence/domain/minutes.ts, copiado en vez de importado porque
@@ -53,7 +53,7 @@ export class GenerateYouTubeMetadataUseCase {
     this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] requireEntitlement starting')
     await this.featureAuthorizer.requireEntitlement({
       organizationId: input.organizationId,
-      feature: YOUTUBE_AI_FEATURE,
+      feature: Feature.YouTubeAi,
       amount: totalContextMinutes(input.context.subtitles),
     })
     this.logger.info({ sourceId: input.sourceId }, '[GenerateYouTubeMetadata] requireEntitlement completed')
@@ -76,7 +76,7 @@ export class GenerateYouTubeMetadataUseCase {
 
     await this.usageEventRecorder.record({
       organizationId: input.organizationId,
-      feature: YOUTUBE_AI_FEATURE,
+      action: UsageEventAction.GenerateYouTubeMetadata,
       provider: 'deepseek',
       model: 'deepseek-v4-flash',
       promptTokens: usage.promptTokens,
