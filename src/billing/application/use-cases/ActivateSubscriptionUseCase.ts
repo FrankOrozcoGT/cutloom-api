@@ -60,11 +60,19 @@ export class ActivateSubscriptionUseCase {
     )
     const proratedCredits = Math.round((plan.creditsPerCycle * daysUntilNextCycle) / 30)
 
+    // periodStart del grant SIEMPRE es el día 1 del mes de alta — no input.currentPeriodStart
+    // real (que puede ser cualquier día, ej. el 15). GrantMonthlyPlanCreditsUseCase cierra cada
+    // mes buscando por ese mismo día 1 calendario; si este grant quedara con el día real de
+    // alta, el cron nunca lo encontraría al expirar lo no gastado (ver
+    // CreditAccountRepository.expireUnusedPlanGrants). El prorrateo ya resolvió el monto justo;
+    // esto solo alinea la clave de período con el único reloj mensual que usa todo el sistema.
+    const periodStart = new Date(Date.UTC(input.currentPeriodStart.getUTCFullYear(), input.currentPeriodStart.getUTCMonth(), 1))
+
     await this.creditAccountRepository.grantFromPlan(
       subscription.organizationId,
       proratedCredits,
       subscription.id,
-      input.currentPeriodStart,
+      periodStart,
     )
   }
 }
