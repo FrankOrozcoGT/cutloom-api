@@ -1,4 +1,4 @@
-export interface PlatformConnectionStatus {
+interface PlatformConnectionStatus {
   connected: boolean
   /** Datos de cuenta específicos de la plataforma, solo informativos (mostrar "conectado como X") — shape distinto por proveedor (YouTube: { googleEmail, channelTitle }; TikTok: { openId, displayName }), opaco para el caller. null si no hay conexión. */
   platformAccountInfo: Record<string, unknown> | null

@@ -1,7 +1,7 @@
 import type { PlanRepository } from '../../domain/ports/PlanRepository'
 import type { SubscriptionInterval } from '../../domain/entities/Plan'
 
-export interface PlanFeatureSummary {
+interface PlanFeatureSummary {
   feature: string
   usageLimit: number | null
 }

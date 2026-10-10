@@ -4,7 +4,7 @@ import type { UserRepository } from '../../domain/ports/UserRepository'
 import { strictSameSite, secureCookie } from '../../../shared/infrastructure/http/cookieSameSitePolicy'
 
 export const SSE_TOKEN_COOKIE = 'sseAccessToken'
-export const SSE_TOKEN_COOKIE_PATH = '/api/notifications'
+const SSE_TOKEN_COOKIE_PATH = '/api/notifications'
 
 export function sseTokenCookieOptions() {
   return {

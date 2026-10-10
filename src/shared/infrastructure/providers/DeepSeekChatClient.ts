@@ -7,7 +7,7 @@ export interface DeepSeekConfig {
   model: string
 }
 
-export interface DeepSeekUsage {
+interface DeepSeekUsage {
   promptTokens: number
   completionTokens: number
 }
@@ -19,7 +19,7 @@ export interface DeepSeekCallResult {
 }
 
 /** Fallo de red/HTTP contra DeepSeek — candidato real a retry (puede ser transitorio, ej. 503 bajo carga). */
-export class DeepSeekTransientError extends Error {}
+class DeepSeekTransientError extends Error {}
 
 /** JSON malformado o shape inesperado — determinista para ese contenido exacto, reintentar el mismo prompt no cambia el resultado. */
 export class DeepSeekMalformedResponseError extends Error {}

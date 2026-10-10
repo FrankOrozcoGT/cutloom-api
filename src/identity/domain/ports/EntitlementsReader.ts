@@ -1,4 +1,4 @@
-export interface EntitlementSummary {
+interface EntitlementSummary {
   feature: string
   /** Siempre true — la lista ya solo contiene features activas ahora mismo (derivadas en vivo de la suscripción del tenant), no existe un estado "inactivo" que listar. */
   active: true

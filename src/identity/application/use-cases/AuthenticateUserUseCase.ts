@@ -10,7 +10,7 @@ import type { TokenService, TokenPair } from '../../domain/ports/TokenService'
 import { AuthDomainService } from '../services/AuthDomainService'
 
 export type AuthProviderName = 'local' | 'google'
-export type AuthIntent = 'register' | 'login'
+type AuthIntent = 'register' | 'login'
 
 export interface AuthenticateUserInput {
   provider: AuthProviderName

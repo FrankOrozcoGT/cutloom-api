@@ -10,7 +10,7 @@ export interface ImproveSubtitlesResult {
   usage: { promptTokens: number; completionTokens: number }
 }
 
-export interface ShortCandidate {
+interface ShortCandidate {
   start: number
   end: number
   confidence: number
@@ -22,7 +22,7 @@ export interface DetectShortsResult {
   usage: { promptTokens: number; completionTokens: number }
 }
 
-export interface ScoredShortResult {
+interface ScoredShortResult {
   index: number
   score: number
 }

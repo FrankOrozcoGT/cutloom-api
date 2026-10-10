@@ -13,10 +13,10 @@ const STATUS_ENDPOINT = `${API_BASE}/status/fetch/`
 // Límites documentados de la Content Posting API (Media Transfer Guide): cada chunk entre
 // 5MB y 64MB, salvo el último que puede absorber el remanente hasta 128MB. Un video < 5MB se
 // sube entero en un único chunk del tamaño exacto del video.
-export const MIN_CHUNK_BYTES = 5 * 1024 * 1024
-export const MAX_CHUNK_BYTES = 64 * 1024 * 1024
+const MIN_CHUNK_BYTES = 5 * 1024 * 1024
+const MAX_CHUNK_BYTES = 64 * 1024 * 1024
 
-export interface TikTokPlatformOptions {
+interface TikTokPlatformOptions {
   privacyLevel: string | null
 }
 
@@ -146,7 +146,7 @@ export async function fetchTikTokPostStatus(accessToken: string, publishId: stri
  * chunk absorba el remanente en vez de dejar un chunk final por debajo de 5MB, que TikTok
  * rechaza. Un video < 5MB va en un único chunk del tamaño exacto del video.
  */
-export function resolveChunkPlan(videoSize: number): { chunkSize: number; totalChunkCount: number } {
+function resolveChunkPlan(videoSize: number): { chunkSize: number; totalChunkCount: number } {
   if (videoSize <= MIN_CHUNK_BYTES) {
     return { chunkSize: videoSize, totalChunkCount: 1 }
   }

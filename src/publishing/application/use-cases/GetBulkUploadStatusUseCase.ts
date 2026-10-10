@@ -6,12 +6,12 @@ import type { SourceUploadRepository } from '../../domain/ports/SourceUploadRepo
 import type { PublishedVideoRepository } from '../../domain/ports/PublishedVideoRepository'
 import { BulkUploadNotFoundError } from './CancelBulkUploadUseCase'
 
-export interface BulkUploadItemPlatformStatus {
+interface BulkUploadItemPlatformStatus {
   platform: VideoPlatform
   status: PublishedVideoStatus
 }
 
-export interface BulkUploadItemStatus {
+interface BulkUploadItemStatus {
   sourceId: string
   uploadStatus: SourceUploadStatus
   platforms: BulkUploadItemPlatformStatus[]

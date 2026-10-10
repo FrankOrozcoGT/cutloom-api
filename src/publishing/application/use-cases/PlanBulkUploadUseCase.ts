@@ -31,7 +31,7 @@ export class TooManyVideosError extends Error {
 }
 
 // Video largo + hasta 9 shorts derivados — mismo techo que el bulk-upload anterior.
-export const MAX_VIDEOS_PER_BULK = 10
+const MAX_VIDEOS_PER_BULK = 10
 
 export interface PlanBulkUploadItem {
   sourceId: string
@@ -57,7 +57,7 @@ export interface PlanBulkUploadInput {
   items: PlanBulkUploadItem[]
 }
 
-export interface PlanBulkUploadUploadUrl {
+interface PlanBulkUploadUploadUrl {
   sourceId: string
   /** null si este archivo ya terminó de subir en un intento anterior (resumir un bulk existente) — no hay nada que subir, el frontend debe saltearlo. */
   uploadUrl: string | null

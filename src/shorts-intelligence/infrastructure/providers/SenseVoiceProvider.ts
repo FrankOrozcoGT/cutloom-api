@@ -14,7 +14,7 @@ export interface SenseVoiceConfig {
   requestTimeoutMs: number
 }
 
-export class SenseVoiceDisabledError extends Error {
+class SenseVoiceDisabledError extends Error {
   constructor() {
     super('SenseVoice is disabled via SENSEVOICE_ENABLED=false')
     this.name = 'SenseVoiceDisabledError'

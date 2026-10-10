@@ -33,7 +33,7 @@ interface ScoreShortsPayload {
   shortIdealJson?: ShortIdealJson
 }
 
-export class InvalidScoreShortsPayloadError extends Error {
+class InvalidScoreShortsPayloadError extends Error {
   constructor(reason: string) {
     super(`Invalid score shorts payload: ${reason}`)
     this.name = 'InvalidScoreShortsPayloadError'
