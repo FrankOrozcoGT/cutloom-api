@@ -25,10 +25,8 @@ export interface CreditAccountRepository {
   deductForUsage(organizationId: string, amount: number, feature: Feature): Promise<CreditAccount>
   /**
    * Salida: "lo que no se usó del plan, se pierde" — calcula cuánto quedó sin gastar del
-   * plan_grant correspondiente a `periodStart` (suma de plan_grant de ese mes menos suma de
-   * usage del mismo mes) y lo descuenta del pozo si es positivo. El crédito comprado (topup)
-   * nunca se toca acá. Idempotente por (organizationId, periodStart) — no vuelve a expirar un
-   * mes ya cerrado. Sin efecto si no quedó sobrante.
+   * plan_grant de `periodStart` y lo descuenta del pozo si es positivo. Idempotente por
+   * (organizationId, periodStart) — no vuelve a expirar un mes ya cerrado.
    */
   expireUnusedPlanGrants(organizationId: string, periodStart: Date): Promise<CreditAccount>
 }

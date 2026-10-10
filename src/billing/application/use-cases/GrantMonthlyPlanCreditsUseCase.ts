@@ -8,9 +8,7 @@ import type { PlanRepository } from '../../domain/ports/PlanRepository'
  * relojes distintos: pagar define cuánto y cada cuánto se cobra dinero; esta recarga define
  * cuánto y cada cuánto se acredita capacidad de uso, siempre mensual sin importar el plan.
  * Corre el día 1 de cada mes (ver Bun.cron en server.ts). Antes de otorgar el grant del mes
- * nuevo, cierra el mes vencido: lo que no se gastó del plan_grant anterior se pierde (use it or
- * lose it — el crédito comprado aparte nunca se toca). Ambos pasos son idempotentes (ver
- * CreditAccountRepository.grantFromPlan / expireUnusedPlanGrants).
+ * nuevo, cierra el mes vencido (use it or lose it).
  */
 export class GrantMonthlyPlanCreditsUseCase {
   constructor(
