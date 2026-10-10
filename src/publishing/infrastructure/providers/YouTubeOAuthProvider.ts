@@ -4,7 +4,7 @@ import {
   GoogleTokenEndpointError,
   refreshGoogleAccessToken,
 } from '../../../shared/infrastructure/providers/GoogleTokenEndpoint'
-import type { YouTubeOAuthPort, YouTubeTokens } from '../../domain/ports/YouTubeOAuthPort'
+import type { PlatformOAuthPort, PlatformOAuthTokens } from '../../domain/ports/PlatformOAuthPort'
 import { isRecord } from '../../../shared/domain/validation'
 
 const AUTHORIZATION_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -19,19 +19,25 @@ const SCOPES = [
   'email',
 ]
 
-/** Único punto de validación de forma para la respuesta de channels.list — de aquí en adelante el tipo se propaga sin recastear. */
-function parseChannelTitle(value: unknown): string | null {
-  if (!isRecord(value) || !Array.isArray(value.items) || value.items.length === 0) return null
-  const channel: unknown = value.items[0]
-  if (!isRecord(channel) || !isRecord(channel.snippet) || typeof channel.snippet.title !== 'string') return null
-  return channel.snippet.title
+interface YouTubeChannelInfo {
+  channelId: string
+  channelTitle: string | null
 }
 
-async function fetchChannelTitle(accessToken: string): Promise<string | null> {
+/** Único punto de validación de forma para la respuesta de channels.list — de aquí en adelante el tipo se propaga sin recastear. */
+function parseChannelInfo(value: unknown): YouTubeChannelInfo | null {
+  if (!isRecord(value) || !Array.isArray(value.items) || value.items.length === 0) return null
+  const channel: unknown = value.items[0]
+  if (!isRecord(channel) || typeof channel.id !== 'string') return null
+  const channelTitle = isRecord(channel.snippet) && typeof channel.snippet.title === 'string' ? channel.snippet.title : null
+  return { channelId: channel.id, channelTitle }
+}
+
+async function fetchChannelInfo(accessToken: string): Promise<YouTubeChannelInfo | null> {
   try {
     const response = await fetch(CHANNELS_ENDPOINT, { headers: { Authorization: `Bearer ${accessToken}` } })
     if (!response.ok) return null
-    return parseChannelTitle(await response.json())
+    return parseChannelInfo(await response.json())
   } catch {
     return null
   }
@@ -67,10 +73,10 @@ async function wrapGoogleTokenEndpointError<T>(fn: () => Promise<T>): Promise<T>
  * OAuth 2.0 separado del de identity (login): mismo GOOGLE_CLIENT_ID/SECRET pero
  * redirect_uri y scope distintos (youtube.upload). access_type=offline + prompt=consent
  * para maximizar la chance de recibir refresh_token, aunque Google no lo garantiza en
- * reconexiones (ver HandleYouTubeOAuthCallbackUseCase). El intercambio de code/refresh_token
+ * reconexiones (ver HandleOAuthCallbackUseCase). El intercambio de code/refresh_token
  * en sí vive en shared/GoogleTokenEndpoint (mecanismo idéntico al de identity/login).
  */
-export class YouTubeOAuthProvider implements YouTubeOAuthPort {
+export class YouTubeOAuthProvider implements PlatformOAuthPort {
   constructor(private readonly options: YouTubeOAuthProviderOptions) {}
 
   buildAuthorizationUrl(state: string): string {
@@ -85,7 +91,7 @@ export class YouTubeOAuthProvider implements YouTubeOAuthPort {
     return url.toString()
   }
 
-  async exchangeCodeForTokens(code: string): Promise<YouTubeTokens> {
+  async exchangeCodeForTokens(code: string): Promise<PlatformOAuthTokens> {
     return wrapGoogleTokenEndpointError(async () => {
       const tokens = await exchangeCodeForGoogleTokens({
         code,
@@ -94,27 +100,29 @@ export class YouTubeOAuthProvider implements YouTubeOAuthPort {
         redirectUri: this.options.redirectUri,
       })
       const googleEmail = tokens.idToken ? extractEmailFromIdToken(tokens.idToken) : null
-      const channelTitle = await fetchChannelTitle(tokens.accessToken)
+      const channelInfo = await fetchChannelInfo(tokens.accessToken)
+      if (!channelInfo) {
+        throw new YouTubeOAuthError('Could not resolve the YouTube channel for this account (channels.list failed or returned no channel)')
+      }
       return {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         expiresAt: tokens.expiresAt,
-        googleEmail,
-        channelTitle,
+        refreshExpiresAt: null,
+        externalAccountId: channelInfo.channelId,
+        platformAccountInfo: { googleEmail, channelTitle: channelInfo.channelTitle },
       }
     })
   }
 
-  async refreshAccessToken(
-    refreshToken: string,
-  ): Promise<Omit<YouTubeTokens, 'refreshToken' | 'googleEmail' | 'channelTitle'>> {
+  async refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; expiresAt: Date; refreshExpiresAt: Date | null }> {
     return wrapGoogleTokenEndpointError(async () => {
       const tokens = await refreshGoogleAccessToken({
         refreshToken,
         clientId: this.options.clientId,
         clientSecret: this.options.clientSecret,
       })
-      return { accessToken: tokens.accessToken, expiresAt: tokens.expiresAt }
+      return { accessToken: tokens.accessToken, expiresAt: tokens.expiresAt, refreshExpiresAt: null }
     })
   }
 }

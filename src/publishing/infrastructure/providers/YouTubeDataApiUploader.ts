@@ -1,18 +1,15 @@
 import { google } from 'googleapis'
 import { GaxiosError } from 'gaxios'
-import type {
-  UploadVideoInput,
-  UploadVideoResult,
-  YouTubeUploader,
-} from '../../domain/ports/YouTubeUploader'
-import { YouTubeUploadQuotaExceededError, YouTubeUploadTokenExpiredError } from '../../domain/ports/YouTubeUploader'
+import { PublishedVideoStatus } from '../../domain/entities/PublishedVideo'
+import type { UploadVideoInput, UploadVideoResult, VideoUploader } from '../../domain/ports/VideoUploader'
+import { VideoUploadQuotaExceededError, VideoUploadTokenExpiredError } from '../../domain/ports/VideoUploader'
 
 /**
  * Usa el cliente oficial de Google (googleapis) en vez de armar el protocolo resumable a
  * mano: media.body acepta un Readable stream, así que el video nunca se bufferiza completo
  * en memoria — viaja en streaming desde el multipart entrante hasta YouTube.
  */
-export class YouTubeDataApiUploader implements YouTubeUploader {
+export class YouTubeDataApiUploader implements VideoUploader {
   async upload(input: UploadVideoInput): Promise<UploadVideoResult> {
     const auth = new google.auth.OAuth2()
     auth.setCredentials({ access_token: input.accessToken })
@@ -46,14 +43,19 @@ export class YouTubeDataApiUploader implements YouTubeUploader {
       if (!youtubeVideoId) {
         throw new Error('YouTube video upload response missing id')
       }
-      return { youtubeVideoId }
+      return {
+        platformVideoId: youtubeVideoId,
+        status: input.publishAt ? PublishedVideoStatus.Scheduled : PublishedVideoStatus.Uploaded,
+        publishId: null,
+        pendingManualAction: false,
+      }
     } catch (error) {
       if (error instanceof GaxiosError) {
         if (error.status === 401) {
-          throw new YouTubeUploadTokenExpiredError()
+          throw new VideoUploadTokenExpiredError()
         }
         if (error.status === 403 || error.status === 429) {
-          throw new YouTubeUploadQuotaExceededError()
+          throw new VideoUploadQuotaExceededError()
         }
       }
       throw error

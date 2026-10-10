@@ -12,7 +12,7 @@ export class AesTokenEncryptionService implements TokenEncryptionService {
   constructor(encryptionKey: string) {
     const key = Buffer.from(encryptionKey, 'utf8')
     if (key.length !== KEY_LENGTH) {
-      throw new Error(`YOUTUBE_ENCRYPTION_KEY must be exactly ${KEY_LENGTH} bytes, got ${key.length}`)
+      throw new Error(`Encryption key must be exactly ${KEY_LENGTH} bytes, got ${key.length}`)
     }
     this.key = key
   }
