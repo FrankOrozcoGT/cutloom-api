@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm'
 import type { Database } from '../../../shared/infrastructure/db/client'
 import {
   creditAccount,
@@ -10,7 +10,7 @@ import {
 } from '../db/schema'
 import { CreditAccount } from '../../domain/entities/CreditAccount'
 import { InsufficientCreditsError } from '../../domain/ports/CreditAccountRepository'
-import type { CreditAccountRepository } from '../../domain/ports/CreditAccountRepository'
+import type { CreditAccountRepository, GrantFromPlanBulkInput } from '../../domain/ports/CreditAccountRepository'
 import type { Feature } from '../../../shared/domain/entities/Feature'
 
 function toEntity(row: typeof creditAccount.$inferSelect): CreditAccount {
@@ -68,6 +68,53 @@ export class DrizzleCreditAccountRepository implements CreditAccountRepository {
       await tx.insert(creditLedgerPlanGrants).values({ ledgerEntryId: entry.id, subscriptionId, periodStart })
 
       return toEntity(updated)
+    })
+  }
+
+  async grantFromPlanBulk(inputs: GrantFromPlanBulkInput[], periodStart: Date): Promise<void> {
+    if (inputs.length === 0) return
+
+    await this.db.transaction(async (tx) => {
+      const subscriptionIds = inputs.map((i) => i.subscriptionId)
+      const alreadyGranted = await tx
+        .select({ subscriptionId: creditLedgerPlanGrants.subscriptionId })
+        .from(creditLedgerPlanGrants)
+        .where(and(inArray(creditLedgerPlanGrants.subscriptionId, subscriptionIds), eq(creditLedgerPlanGrants.periodStart, periodStart)))
+      const alreadyGrantedIds = new Set(alreadyGranted.map((row) => row.subscriptionId))
+
+      const pending = inputs.filter((i) => !alreadyGrantedIds.has(i.subscriptionId))
+      if (pending.length === 0) return
+
+      const organizationIds = pending.map((i) => i.organizationId)
+      await tx
+        .insert(creditAccount)
+        .values(organizationIds.map((organizationId) => ({ organizationId, balance: 0 })))
+        .onConflictDoNothing({ target: creditAccount.organizationId })
+
+      // Un solo UPDATE para todas las organizaciones pendientes, cada una con su propio monto —
+      // CASE WHEN en vez de N statements, evita el N+1 de escritura.
+      const amountCase = sql.join(
+        pending.map((i) => sql`WHEN ${creditAccount.organizationId} = ${i.organizationId} THEN ${creditAccount.balance} + ${i.amount}`),
+        sql` `,
+      )
+      await tx
+        .update(creditAccount)
+        .set({ balance: sql`CASE ${amountCase} ELSE ${creditAccount.balance} END`, updatedAt: new Date() })
+        .where(inArray(creditAccount.organizationId, organizationIds))
+
+      const entryRows = await tx
+        .insert(creditLedgerEntries)
+        .values(pending.map((i) => ({ organizationId: i.organizationId, amount: i.amount, type: 'plan_grant' as const })))
+        .returning({ id: creditLedgerEntries.id, organizationId: creditLedgerEntries.organizationId })
+
+      const subscriptionIdByOrganizationId = new Map(pending.map((i) => [i.organizationId, i.subscriptionId]))
+      await tx.insert(creditLedgerPlanGrants).values(
+        entryRows.map((row) => {
+          const subscriptionId = subscriptionIdByOrganizationId.get(row.organizationId)
+          if (!subscriptionId) throw new Error(`Missing subscriptionId for organization ${row.organizationId}`)
+          return { ledgerEntryId: row.id, subscriptionId, periodStart }
+        }),
+      )
     })
   }
 
@@ -198,6 +245,79 @@ export class DrizzleCreditAccountRepository implements CreditAccountRepository {
       await tx.insert(creditLedgerExpirations).values({ ledgerEntryId: entry.id, organizationId, periodStart })
 
       return toEntity(updated)
+    })
+  }
+
+  async expireUnusedPlanGrantsBulk(organizationIds: string[], periodStart: Date): Promise<void> {
+    if (organizationIds.length === 0) return
+
+    await this.db.transaction(async (tx) => {
+      const alreadyExpired = await tx
+        .select({ organizationId: creditLedgerExpirations.organizationId })
+        .from(creditLedgerExpirations)
+        .where(and(inArray(creditLedgerExpirations.organizationId, organizationIds), eq(creditLedgerExpirations.periodStart, periodStart)))
+      const alreadyExpiredIds = new Set(alreadyExpired.map((row) => row.organizationId))
+
+      const pendingIds = organizationIds.filter((id) => !alreadyExpiredIds.has(id))
+      if (pendingIds.length === 0) return
+
+      const periodEnd = new Date(Date.UTC(periodStart.getUTCFullYear(), periodStart.getUTCMonth() + 1, 1))
+
+      const grantedRows = await tx
+        .select({ organizationId: creditLedgerEntries.organizationId, total: sql<number>`coalesce(sum(${creditLedgerEntries.amount}), 0)` })
+        .from(creditLedgerEntries)
+        .innerJoin(creditLedgerPlanGrants, eq(creditLedgerPlanGrants.ledgerEntryId, creditLedgerEntries.id))
+        .where(and(inArray(creditLedgerEntries.organizationId, pendingIds), eq(creditLedgerPlanGrants.periodStart, periodStart)))
+        .groupBy(creditLedgerEntries.organizationId)
+      const grantedByOrganizationId = new Map(grantedRows.map((row) => [row.organizationId, row.total]))
+
+      const usedRows = await tx
+        .select({ organizationId: creditLedgerEntries.organizationId, total: sql<number>`coalesce(sum(${creditLedgerEntries.amount}), 0)` })
+        .from(creditLedgerEntries)
+        .innerJoin(creditLedgerUsages, eq(creditLedgerUsages.ledgerEntryId, creditLedgerEntries.id))
+        .where(
+          and(
+            inArray(creditLedgerEntries.organizationId, pendingIds),
+            gte(creditLedgerEntries.createdAt, periodStart),
+            lt(creditLedgerEntries.createdAt, periodEnd),
+          ),
+        )
+        .groupBy(creditLedgerEntries.organizationId)
+      const usedByOrganizationId = new Map(usedRows.map((row) => [row.organizationId, Math.abs(row.total)]))
+
+      const unusedByOrganizationId = new Map(
+        pendingIds.map((organizationId) => [
+          organizationId,
+          (grantedByOrganizationId.get(organizationId) ?? 0) - (usedByOrganizationId.get(organizationId) ?? 0),
+        ]),
+      )
+      const toExpire = pendingIds.filter((organizationId) => (unusedByOrganizationId.get(organizationId) ?? 0) > 0)
+
+      if (toExpire.length > 0) {
+        const balanceCase = sql.join(
+          toExpire.map(
+            (organizationId) =>
+              sql`WHEN ${creditAccount.organizationId} = ${organizationId} THEN greatest(${creditAccount.balance} - ${unusedByOrganizationId.get(organizationId)}, 0)`,
+          ),
+          sql` `,
+        )
+        await tx
+          .update(creditAccount)
+          .set({ balance: sql`CASE ${balanceCase} ELSE ${creditAccount.balance} END`, updatedAt: new Date() })
+          .where(inArray(creditAccount.organizationId, toExpire))
+      }
+
+      const entryRows = await tx
+        .insert(creditLedgerEntries)
+        .values(
+          pendingIds.map((organizationId) => {
+            const unused = unusedByOrganizationId.get(organizationId) ?? 0
+            return { organizationId, amount: unused > 0 ? -unused : 0, type: 'expire' as const }
+          }),
+        )
+        .returning({ id: creditLedgerEntries.id, organizationId: creditLedgerEntries.organizationId })
+
+      await tx.insert(creditLedgerExpirations).values(entryRows.map((row) => ({ ledgerEntryId: row.id, organizationId: row.organizationId, periodStart })))
     })
   }
 }

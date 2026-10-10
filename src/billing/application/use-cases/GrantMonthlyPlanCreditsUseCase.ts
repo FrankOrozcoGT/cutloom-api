@@ -26,11 +26,18 @@ export class GrantMonthlyPlanCreditsUseCase {
     const plans = await this.planRepository.findByIds(activeSubscriptions.map((s) => s.planId))
     const plansById = new Map(plans.map((p) => [p.id, p]))
 
-    for (const subscription of activeSubscriptions) {
-      const plan = plansById.get(subscription.planId)
-      if (!plan) continue
-      await this.creditAccountRepository.expireUnusedPlanGrants(subscription.organizationId, previousPeriodStart)
-      await this.creditAccountRepository.grantFromPlan(subscription.organizationId, plan.creditsPerCycle, subscription.id, periodStart)
-    }
+    const grants = activeSubscriptions
+      .map((subscription) => {
+        const plan = plansById.get(subscription.planId)
+        if (!plan) return null
+        return { organizationId: subscription.organizationId, amount: plan.creditsPerCycle, subscriptionId: subscription.id }
+      })
+      .filter((grant) => grant !== null)
+
+    await this.creditAccountRepository.expireUnusedPlanGrantsBulk(
+      grants.map((g) => g.organizationId),
+      previousPeriodStart,
+    )
+    await this.creditAccountRepository.grantFromPlanBulk(grants, periodStart)
   }
 }
