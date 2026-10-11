@@ -53,10 +53,10 @@ function adaptRequireEntitlement<E extends Error>(
 }
 
 export function buildServer() {
-  // 'info' (default de Fastify) loguea cada request completa — volumen alto en producción,
-  // sumado a que hoy no hay agregador de logs externo (solo stdout + rotación de Docker, ver
-  // docker-compose.yml), así que se reduce a 'warn' fuera de dev para no saturar el disco.
-  const logLevel = process.env.NODE_ENV === 'production' ? 'warn' : 'info'
+  // 'info' en todos los entornos: con 'warn' en producción, un fallo real de un usuario
+  // (ej. auth con Google) no dejaba ningún rastro — ni siquiera un 4xx queda registrado por
+  // debajo de 'warn', así que era imposible diagnosticar incidentes reales sin poder
+  // reproducirlos. Volumen de disco: mitigado por la rotación de Docker (ver docker-compose.yml).
   // En dev, además de stdout (que se pierde si el proceso o la máquina mueren de golpe, ej. un
   // OOM), se escribe a un archivo en disco — así el log del momento exacto del colapso persiste
   // y se puede revisar después, en vez de depender de que la terminal siga viva para leerlo.
@@ -68,8 +68,8 @@ export function buildServer() {
   const devLogFile = process.env.NODE_ENV === 'production' ? undefined : pino.destination({ dest: './logs/backend.log', sync: false })
   const app = Fastify({
     logger: devLogFile
-      ? { level: logLevel, stream: pino.multistream([{ stream: process.stdout }, { stream: devLogFile }]) }
-      : { level: logLevel },
+      ? { level: 'info', stream: pino.multistream([{ stream: process.stdout }, { stream: devLogFile }]) }
+      : { level: 'info' },
   })
 
   app.register(cors, {
