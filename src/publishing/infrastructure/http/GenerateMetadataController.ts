@@ -105,7 +105,7 @@ export class GenerateMetadataController {
         metadata: revision.metadata,
       })
     } catch (error) {
-      this.logger.error({ organizationId: req.organizationId, error: error instanceof Error ? error.message : error }, '[generateMetadata] failed')
+      this.logger.error({ organizationId: req.organizationId, err: error }, '[generateMetadata] failed')
       if (error instanceof InvalidRequestError) {
         return reply.status(400).send({ error: 'INVALID_REQUEST', message: error.message })
       }

@@ -47,8 +47,8 @@ async function fetchChannelInfo(accessToken: string, logger: Logger): Promise<Yo
       logger.error({ status: response.status }, '[YouTubeOAuthProvider] channels.list returned no channel for this account')
     }
     return parsed
-  } catch (error) {
-    logger.error({ error }, '[YouTubeOAuthProvider] channels.list threw')
+  } catch (err) {
+    logger.error({ err }, '[YouTubeOAuthProvider] channels.list threw')
     return null
   }
 }

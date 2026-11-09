@@ -119,14 +119,14 @@ export class DeepSeekChatClient {
           thinking: { type: 'disabled' },
         } satisfies DeepSeekChatRequest),
       })
-    } catch (error) {
+    } catch (err) {
       // fetch() en sí puede rechazar (no solo devolver !res.ok): timeout del AbortController,
       // socket reseteado por la red (ECONNRESET), DNS, etc. — todos son fallos de transporte,
       // igual de transitorios que un 5xx, así que cuentan para el mismo mecanismo de retry.
       const httpMs = Date.now() - httpStart
-      this.logger.error({ attempt, httpMs, error }, '[DeepSeek] network call failed')
+      this.logger.error({ attempt, httpMs, err }, '[DeepSeek] network call failed')
       throw new DeepSeekTransientError(
-        `DeepSeek request failed: ${error instanceof Error ? error.message : String(error)}`,
+        `DeepSeek request failed: ${err instanceof Error ? err.message : String(err)}`,
       )
     }
     const httpMs = Date.now() - httpStart

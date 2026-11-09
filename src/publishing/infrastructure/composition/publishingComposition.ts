@@ -215,13 +215,13 @@ export function buildPublishingModule(
   )
 
   tusBulkUploadHandler.onActivity((tusUploadId, now) => {
-    bulkUploadOrchestrator.onSourceUploadActivity(tusUploadId, now).catch((error: unknown) => {
-      logger.error({ tusUploadId, error }, '[publishingComposition] onSourceUploadActivity failed')
+    bulkUploadOrchestrator.onSourceUploadActivity(tusUploadId, now).catch((err: unknown) => {
+      logger.error({ tusUploadId, err }, '[publishingComposition] onSourceUploadActivity failed')
     })
   })
   tusBulkUploadHandler.onCompleted((tusUploadId) => {
-    bulkUploadOrchestrator.onSourceUploadCompleted(tusUploadId).catch((error: unknown) => {
-      logger.error({ tusUploadId, error }, '[publishingComposition] onSourceUploadCompleted failed')
+    bulkUploadOrchestrator.onSourceUploadCompleted(tusUploadId).catch((err: unknown) => {
+      logger.error({ tusUploadId, err }, '[publishingComposition] onSourceUploadCompleted failed')
     })
   })
 

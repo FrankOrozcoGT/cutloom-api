@@ -179,9 +179,9 @@ export class ScoreShortsUseCase {
             peakMemoryBytes,
           })
           return emotion
-        } catch (error) {
+        } catch (err) {
           this.logger.error(
-            { start: candidate.start, end: candidate.end, error },
+            { start: candidate.start, end: candidate.end, err },
             'ScoreShortsUseCase: emotion analysis failed for candidate',
           )
           anyFailed = true
