@@ -42,7 +42,6 @@
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.11.3",
-    "gaxios": "^8.0.0",
     "googleapis": "^180.0.0",
     "jose": "^6.2.8",
     "pino": "^10.4.0",

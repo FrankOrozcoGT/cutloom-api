@@ -72,11 +72,14 @@ export function buildPublishingModule(
   // variable suelta por proveedor — evita que cambiar de ambiente (dev/túnel/prod) requiera
   // actualizar varios redirect_uri por separado y queden desincronizados entre sí (ver
   // GOOGLE_REDIRECT_URI/YOUTUBE_OAUTH_REDIRECT_URI/TIKTOK_OAUTH_REDIRECT_URI, eliminadas del .env).
-  const youTubeOAuthProvider = new YouTubeOAuthProvider({
-    clientId: readEnv('GOOGLE_CLIENT_ID'),
-    clientSecret: readEnv('GOOGLE_CLIENT_SECRET'),
-    redirectUri: `${apiBaseUrl}/api/publishing/youtube/auth/callback`,
-  })
+  const youTubeOAuthProvider = new YouTubeOAuthProvider(
+    {
+      clientId: readEnv('GOOGLE_CLIENT_ID'),
+      clientSecret: readEnv('GOOGLE_CLIENT_SECRET'),
+      redirectUri: `${apiBaseUrl}/api/publishing/youtube/auth/callback`,
+    },
+    logger,
+  )
   const tikTokOAuthProvider = new TikTokOAuthProvider({
     clientKey: readEnv('TIKTOK_CLIENT_KEY', process.env.NODE_ENV === 'production' ? undefined : 'dev-placeholder'),
     clientSecret: readEnv('TIKTOK_CLIENT_SECRET', process.env.NODE_ENV === 'production' ? undefined : 'dev-placeholder'),

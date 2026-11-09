@@ -1,5 +1,4 @@
-import { google } from 'googleapis'
-import { GaxiosError } from 'gaxios'
+import { google, Common } from 'googleapis'
 import { PublishedVideoStatus } from '../../domain/entities/PublishedVideo'
 import type { UploadVideoInput, UploadVideoResult, VideoUploader } from '../../domain/ports/VideoUploader'
 import { VideoUploadQuotaExceededError, VideoUploadTokenExpiredError } from '../../domain/ports/VideoUploader'
@@ -50,7 +49,7 @@ export class YouTubeDataApiUploader implements VideoUploader {
         pendingManualAction: false,
       }
     } catch (error) {
-      if (error instanceof GaxiosError) {
+      if (error instanceof Common.GaxiosError) {
         if (error.status === 401) {
           throw new VideoUploadTokenExpiredError()
         }

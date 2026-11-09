@@ -6,6 +6,7 @@ import {
 } from '../../../shared/infrastructure/providers/GoogleTokenEndpoint'
 import type { PlatformOAuthPort, PlatformOAuthTokens } from '../../domain/ports/PlatformOAuthPort'
 import { isRecord } from '../../../shared/domain/validation'
+import type { Logger } from '../../../shared/domain/ports/Logger'
 
 const AUTHORIZATION_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth'
 const CHANNELS_ENDPOINT = 'https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true'
@@ -33,12 +34,21 @@ function parseChannelInfo(value: unknown): YouTubeChannelInfo | null {
   return { channelId: channel.id, channelTitle }
 }
 
-async function fetchChannelInfo(accessToken: string): Promise<YouTubeChannelInfo | null> {
+async function fetchChannelInfo(accessToken: string, logger: Logger): Promise<YouTubeChannelInfo | null> {
   try {
     const response = await fetch(CHANNELS_ENDPOINT, { headers: { Authorization: `Bearer ${accessToken}` } })
-    if (!response.ok) return null
-    return parseChannelInfo(await response.json())
-  } catch {
+    if (!response.ok) {
+      const body = await response.text().catch(() => '<unreadable body>')
+      logger.error({ status: response.status, body }, '[YouTubeOAuthProvider] channels.list failed')
+      return null
+    }
+    const parsed = parseChannelInfo(await response.json())
+    if (!parsed) {
+      logger.error({ status: response.status }, '[YouTubeOAuthProvider] channels.list returned no channel for this account')
+    }
+    return parsed
+  } catch (error) {
+    logger.error({ error }, '[YouTubeOAuthProvider] channels.list threw')
     return null
   }
 }
@@ -77,7 +87,10 @@ async function wrapGoogleTokenEndpointError<T>(fn: () => Promise<T>): Promise<T>
  * en sí vive en shared/GoogleTokenEndpoint (mecanismo idéntico al de identity/login).
  */
 export class YouTubeOAuthProvider implements PlatformOAuthPort {
-  constructor(private readonly options: YouTubeOAuthProviderOptions) {}
+  constructor(
+    private readonly options: YouTubeOAuthProviderOptions,
+    private readonly logger: Logger,
+  ) {}
 
   buildAuthorizationUrl(state: string): string {
     const url = new URL(AUTHORIZATION_ENDPOINT)
@@ -100,7 +113,7 @@ export class YouTubeOAuthProvider implements PlatformOAuthPort {
         redirectUri: this.options.redirectUri,
       })
       const googleEmail = tokens.idToken ? extractEmailFromIdToken(tokens.idToken) : null
-      const channelInfo = await fetchChannelInfo(tokens.accessToken)
+      const channelInfo = await fetchChannelInfo(tokens.accessToken, this.logger)
       if (!channelInfo) {
         throw new YouTubeOAuthError('Could not resolve the YouTube channel for this account (channels.list failed or returned no channel)')
       }
